@@ -15,12 +15,8 @@
     "#/*": "./src/*"
   },
   "devDependencies": {
-    "@types/bun": "latest"
-  },
-  "peerDependencies": {
+    "@biomejs/biome": "^2.6.6",
+    "@types/bun": "latest",
     "typescript": "^7"
-  },
-  "dependencies": {
-    "@biomejs/biome": "^2.6.6"
   }
 }
