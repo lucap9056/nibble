@@ -1,8 +1,11 @@
 {
-  "name": "nibble",
-  "module": "src/index.ts",
+  "name": "@lucap9056/nibble",
+  "version": "0.1.0",
   "type": "module",
-  "private": true,
+  "exports": {
+    ".": "./src/core/index.ts"
+  },
+  "files": ["src/core"],
   "scripts": {
     "start": "bun run src/main.ts",
     "typecheck": "bun check",
@@ -12,7 +15,7 @@
     "check:fix": "biome check --write ."
   },
   "imports": {
-    "#/*": "./src/*"
+    "#src/*": "./src/*.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.6",
