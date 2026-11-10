@@ -11,6 +11,11 @@ export default define({
     put: async (req) => Response.json(await req.json()),
     patch: async (req) => Response.json(await req.json()),
     delete: () => new Response(null, { status: 204 }),
+    options: () =>
+      new Response(null, {
+        status: 204,
+        headers: { Allow: "GET, POST, PUT, PATCH, DELETE, OPTIONS" },
+      }),
     wss: {
       upgrade: (req): UserWebSocketContext => ({
         user: req.headers.get("X-User") ?? "anonymous",

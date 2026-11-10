@@ -25,6 +25,7 @@ export const NIBBLE_HTTP_METHODS = [
   "put",
   "delete",
   "patch",
+  "options",
 ] as const;
 
 export type NibbleHttpMethod = (typeof NIBBLE_HTTP_METHODS)[number];
@@ -186,6 +187,11 @@ export function assertBubble(
  *     put: async (req) => Response.json(await req.json()),
  *     patch: async (req) => Response.json(await req.json()),
  *     delete: () => new Response(null, { status: 204 }),
+ *     options: () =>
+ *       new Response(null, {
+ *         status: 204,
+ *         headers: { Allow: "GET, POST, PUT, PATCH, DELETE, OPTIONS" },
+ *       }),
  *     wss: {
  *       upgrade: (req): UserWebSocketContext => ({
  *         user: req.headers.get("X-User") ?? "anonymous",
