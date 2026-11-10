@@ -3,7 +3,7 @@ import path from "node:path";
 import * as nibble from "@lucap9056/nibble";
 import {
   assertBubble,
-  type DefaultNibbleWebSocketContext,
+  createDefaultNibbleWebSocketContext,
   NIBBLE_HTTP_METHODS,
   type NibbleBubble,
   type NibbleHttpMethod,
@@ -63,10 +63,6 @@ const loadBubble = async (
   };
 };
 
-const defaultUpgradeHandler = (_: Request): DefaultNibbleWebSocketContext => ({
-  connId: Bun.randomUUIDv7(),
-});
-
 const tryParseNibbleHttpMethod = (
   value: string,
 ): NibbleHttpMethod | undefined => {
@@ -97,7 +93,8 @@ const handleUpgrade = async (
 const startupServer = async ({ bubbleSocketPath, bubble }: BubbleInfo) => {
   const unix = `${bubbleSocketPath}.temp`;
 
-  const upgradeHandler = bubble.handlers.wss?.upgrade ?? defaultUpgradeHandler;
+  const upgradeHandler =
+    bubble.handlers.wss?.upgrade ?? createDefaultNibbleWebSocketContext;
 
   const websocket: WebSocketHandler<unknown> = {};
   if (bubble.handlers.wss) {
