@@ -5,14 +5,6 @@ interface UserWebSocketContext {
 }
 
 export default define({
-  cors: {
-    origin: ["https://example.com"],
-    methods: ["GET", "POST"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    exposedHeaders: ["X-Request-Id"],
-    credentials: true,
-    maxAge: 600,
-  },
   handlers: {
     get: (req) => Response.json({ url: req.url }),
     post: async (req) => Response.json(await req.json(), { status: 201 }),

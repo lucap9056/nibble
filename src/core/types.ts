@@ -37,41 +37,7 @@ export type NibbleHandlers<T = DefaultNibbleWebSocketContext> = {
   wss?: NibbleWebSocketHandlers<T>;
 };
 
-export type NibbleCorsMethod = Uppercase<NibbleHttpMethod> | "HEAD" | "OPTIONS";
-
-export const NIBBLE_CORS_METHODS = [
-  "GET",
-  "POST",
-  "PUT",
-  "DELETE",
-  "PATCH",
-  "HEAD",
-  "OPTIONS",
-] as const satisfies readonly NibbleCorsMethod[];
-
-export type NibbleOrigin = `${string}://${string}`;
-
-interface NibbleCorsOptions {
-  methods?: NibbleCorsMethod[];
-  allowedHeaders?: string[];
-  exposedHeaders?: string[];
-  maxAge?: number;
-}
-
-interface NibbleWildcardCors extends NibbleCorsOptions {
-  origin?: "*";
-  credentials?: false;
-}
-
-interface NibbleExplicitOriginCors extends NibbleCorsOptions {
-  origin: NibbleOrigin | NibbleOrigin[];
-  credentials?: boolean;
-}
-
-export type NibbleCors = NibbleWildcardCors | NibbleExplicitOriginCors;
-
 export interface NibbleBubble<T = DefaultNibbleWebSocketContext> {
-  cors?: NibbleCors;
   handlers: NibbleHandlers<T>;
 }
 
@@ -86,16 +52,7 @@ export class NibbleDefinitionError extends Error {
   }
 }
 
-const FUNCTION_KEYS = ["cors", "handlers"] as const;
-
-const CORS_KEYS = [
-  "origin",
-  "methods",
-  "allowedHeaders",
-  "exposedHeaders",
-  "credentials",
-  "maxAge",
-] as const satisfies readonly (keyof NibbleExplicitOriginCors)[];
+const FUNCTION_KEYS = ["handlers"] as const;
 
 const WEBSOCKET_EVENT_KEYS = [
   "onconnect",
@@ -107,55 +64,12 @@ const WEBSOCKET_KEYS = ["upgrade", ...WEBSOCKET_EVENT_KEYS] as const;
 
 const HANDLER_KEYS = [...NIBBLE_HTTP_METHODS, "wss"] as const;
 
-const ORIGIN_PATTERN = /^[a-z][a-z\d+.-]*:\/\/[^/?#\s]+$/i;
-
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0;
-}
-
-function isNonEmptyStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every(isNonEmptyString);
-}
-
 function isFunction(value: unknown): value is (...args: never[]) => unknown {
   return typeof value === "function";
-}
-
-function isBoolean(value: unknown): value is boolean {
-  return typeof value === "boolean";
-}
-
-function isNonNegativeInteger(value: unknown): value is number {
-  return Number.isSafeInteger(value) && (value as number) >= 0;
-}
-
-function isNibbleOrigin(value: unknown): value is NibbleOrigin {
-  return typeof value === "string" && ORIGIN_PATTERN.test(value);
-}
-
-function isOrigin(
-  value: unknown,
-): value is "*" | NibbleOrigin | NibbleOrigin[] {
-  return (
-    value === "*" ||
-    isNibbleOrigin(value) ||
-    (Array.isArray(value) && value.length > 0 && value.every(isNibbleOrigin))
-  );
-}
-
-function isCorsMethod(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    (NIBBLE_CORS_METHODS as readonly string[]).includes(value.toUpperCase())
-  );
-}
-
-function isCorsMethodArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every(isCorsMethod);
 }
 
 function collectUnknownKeyIssues(
@@ -179,58 +93,6 @@ function collectOptionalIssue(
 ): void {
   if (value !== undefined && !guard(value)) {
     issues.push(message);
-  }
-}
-
-function collectCorsIssues(value: unknown, issues: string[]): void {
-  if (!isPlainObject(value)) {
-    issues.push("cors must be an object");
-    return;
-  }
-
-  collectUnknownKeyIssues(value, CORS_KEYS, "cors.", issues);
-  collectOptionalIssue(
-    value.origin,
-    isOrigin,
-    'cors.origin must be "*", an origin such as "https://example.com" (no trailing slash), or a non-empty array of origins',
-    issues,
-  );
-  collectOptionalIssue(
-    value.methods,
-    isCorsMethodArray,
-    `cors.methods must be an array of ${NIBBLE_CORS_METHODS.join(", ")}`,
-    issues,
-  );
-  collectOptionalIssue(
-    value.allowedHeaders,
-    isNonEmptyStringArray,
-    "cors.allowedHeaders must be an array of non-empty strings",
-    issues,
-  );
-  collectOptionalIssue(
-    value.exposedHeaders,
-    isNonEmptyStringArray,
-    "cors.exposedHeaders must be an array of non-empty strings",
-    issues,
-  );
-  collectOptionalIssue(
-    value.credentials,
-    isBoolean,
-    "cors.credentials must be a boolean",
-    issues,
-  );
-  collectOptionalIssue(
-    value.maxAge,
-    isNonNegativeInteger,
-    "cors.maxAge must be a non-negative integer",
-    issues,
-  );
-
-  const isWildcardOrigin = value.origin === undefined || value.origin === "*";
-  if (value.credentials === true && isWildcardOrigin) {
-    issues.push(
-      'cors.credentials cannot be true when cors.origin is "*" (browsers reject this combination); list explicit origins instead',
-    );
   }
 }
 
@@ -296,9 +158,6 @@ function collectFunctionIssues(value: unknown): string[] {
   }
 
   collectUnknownKeyIssues(value, FUNCTION_KEYS, "", issues);
-  if (value.cors !== undefined) {
-    collectCorsIssues(value.cors, issues);
-  }
   collectHandlersIssues(value.handlers, issues);
 
   return issues;
@@ -321,14 +180,6 @@ export function assertBubble(
  * }
  *
  * export default define({
- *   cors: {
- *     origin: ["https://example.com"],
- *     methods: ["GET", "POST"],
- *     allowedHeaders: ["Content-Type", "Authorization"],
- *     exposedHeaders: ["X-Request-Id"],
- *     credentials: true,
- *     maxAge: 600,
- *   },
  *   handlers: {
  *     get: (req) => Response.json({ url: req.url }),
  *     post: async (req) => Response.json(await req.json(), { status: 201 }),
