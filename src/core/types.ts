@@ -1,18 +1,22 @@
 export interface DefaultNibbleWebSocketContext {
-  conn_id: string;
+  connId: string;
 }
 
 export type NibbleWebSocket<T = DefaultNibbleWebSocketContext> =
   Bun.ServerWebSocket<T>;
 
 export interface NibbleWebSocketHandlers<T = DefaultNibbleWebSocketContext> {
-  upgrade?: (req: Request) => T | Promise<T>;
-  onconnect?: (ws: NibbleWebSocket<T>) => void;
+  upgrade?: (req: Request) => T;
+  onconnect?: (ws: NibbleWebSocket<T>) => void | Promise<void>;
   onmessage?: (
     ws: NibbleWebSocket<T>,
     message: string | Buffer<ArrayBuffer>,
-  ) => void;
-  onclose?: (ws: NibbleWebSocket<T>, code: number, reason: string) => void;
+  ) => void | Promise<void>;
+  onclose?: (
+    ws: NibbleWebSocket<T>,
+    code: number,
+    reason: string,
+  ) => void | Promise<void>;
 }
 
 export const NIBBLE_HTTP_METHODS = [
@@ -33,7 +37,7 @@ export type NibbleHandlers<T = DefaultNibbleWebSocketContext> = {
   wss?: NibbleWebSocketHandlers<T>;
 };
 
-export type NibbleCORSMethod = Uppercase<NibbleHttpMethod> | "HEAD" | "OPTIONS";
+export type NibbleCorsMethod = Uppercase<NibbleHttpMethod> | "HEAD" | "OPTIONS";
 
 export const NIBBLE_CORS_METHODS = [
   "GET",
@@ -43,31 +47,31 @@ export const NIBBLE_CORS_METHODS = [
   "PATCH",
   "HEAD",
   "OPTIONS",
-] as const satisfies readonly NibbleCORSMethod[];
+] as const satisfies readonly NibbleCorsMethod[];
 
 export type NibbleOrigin = `${string}://${string}`;
 
-interface NibbleCORSOptions {
-  methods?: NibbleCORSMethod[];
+interface NibbleCorsOptions {
+  methods?: NibbleCorsMethod[];
   allowedHeaders?: string[];
   exposedHeaders?: string[];
   maxAge?: number;
 }
 
-interface NibbleWildcardCORS extends NibbleCORSOptions {
+interface NibbleWildcardCors extends NibbleCorsOptions {
   origin?: "*";
   credentials?: false;
 }
 
-interface NibbleExplicitOriginCORS extends NibbleCORSOptions {
+interface NibbleExplicitOriginCors extends NibbleCorsOptions {
   origin: NibbleOrigin | NibbleOrigin[];
   credentials?: boolean;
 }
 
-export type NibbleCORS = NibbleWildcardCORS | NibbleExplicitOriginCORS;
+export type NibbleCors = NibbleWildcardCors | NibbleExplicitOriginCors;
 
-export interface NibbleFunction<T = DefaultNibbleWebSocketContext> {
-  cors?: NibbleCORS;
+export interface NibbleBubble<T = DefaultNibbleWebSocketContext> {
+  cors?: NibbleCors;
   handlers: NibbleHandlers<T>;
 }
 
@@ -76,7 +80,7 @@ export class NibbleDefinitionError extends Error {
 
   constructor(issues: readonly string[]) {
     const details = issues.map((issue) => `  - ${issue}`).join("\n");
-    super(`Invalid nibble function definition:\n${details}`);
+    super(`Invalid bubble definition:\n${details}`);
     this.name = "NibbleDefinitionError";
     this.issues = issues;
   }
@@ -91,7 +95,7 @@ const CORS_KEYS = [
   "exposedHeaders",
   "credentials",
   "maxAge",
-] as const satisfies readonly (keyof NibbleExplicitOriginCORS)[];
+] as const satisfies readonly (keyof NibbleExplicitOriginCors)[];
 
 const WEBSOCKET_EVENT_KEYS = [
   "onconnect",
@@ -143,15 +147,15 @@ function isOrigin(
   );
 }
 
-function isCORSMethod(value: unknown): value is string {
+function isCorsMethod(value: unknown): value is string {
   return (
     typeof value === "string" &&
     (NIBBLE_CORS_METHODS as readonly string[]).includes(value.toUpperCase())
   );
 }
 
-function isCORSMethodArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every(isCORSMethod);
+function isCorsMethodArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(isCorsMethod);
 }
 
 function collectUnknownKeyIssues(
@@ -178,7 +182,7 @@ function collectOptionalIssue(
   }
 }
 
-function collectCORSIssues(value: unknown, issues: string[]): void {
+function collectCorsIssues(value: unknown, issues: string[]): void {
   if (!isPlainObject(value)) {
     issues.push("cors must be an object");
     return;
@@ -193,7 +197,7 @@ function collectCORSIssues(value: unknown, issues: string[]): void {
   );
   collectOptionalIssue(
     value.methods,
-    isCORSMethodArray,
+    isCorsMethodArray,
     `cors.methods must be an array of ${NIBBLE_CORS_METHODS.join(", ")}`,
     issues,
   );
@@ -293,16 +297,16 @@ function collectFunctionIssues(value: unknown): string[] {
 
   collectUnknownKeyIssues(value, FUNCTION_KEYS, "", issues);
   if (value.cors !== undefined) {
-    collectCORSIssues(value.cors, issues);
+    collectCorsIssues(value.cors, issues);
   }
   collectHandlersIssues(value.handlers, issues);
 
   return issues;
 }
 
-export function assertNibbleFunction(
+export function assertBubble(
   value: unknown,
-): asserts value is NibbleFunction<unknown> {
+): asserts value is NibbleBubble<unknown> {
   const issues = collectFunctionIssues(value);
   if (issues.length > 0) {
     throw new NibbleDefinitionError(issues);
@@ -335,17 +339,17 @@ export function assertNibbleFunction(
  *       upgrade: (req): UserWebSocketContext => ({
  *         user: req.headers.get("X-User") ?? "anonymous",
  *       }),
- *       onconnect: (ws) => ws.send(`hello ${ws.data.user}`), // ws.data is UserWebSocketContext
- *       onmessage: (ws, message) => ws.send(message),
- *       onclose: (ws, code, reason) => console.log(ws.data.user, code, reason),
+ *       onconnect: (ws) => { ws.send(`hello ${ws.data.user}`) }, // ws.data is UserWebSocketContext
+ *       onmessage: (ws, message) => { ws.send(message) },
+ *       onclose: (ws, code, reason) => { console.log(ws.data.user, code, reason) },
  *     },
  *   },
  * });
  * ```
  */
 export function define<T = DefaultNibbleWebSocketContext>(
-  f: NibbleFunction<T>,
-): NibbleFunction<T> {
-  assertNibbleFunction(f);
+  f: NibbleBubble<T>,
+): NibbleBubble<T> {
+  assertBubble(f);
   return f;
 }

@@ -28,6 +28,9 @@
       "preset": "recommended",
       "suspicious": {
         "noExplicitAny": "off"
+      },
+      "style": {
+        "useNamingConvention": "error"
       }
     }
   },
