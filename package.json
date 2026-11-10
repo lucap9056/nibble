@@ -8,14 +8,11 @@
   "files": ["src/core"],
   "scripts": {
     "start": "bun run src/main.ts",
-    "typecheck": "bun check",
+    "typecheck": "tsc -b",
     "lint": "biome lint .",
     "format": "biome format --write .",
     "check": "biome check .",
     "check:fix": "biome check --write ."
-  },
-  "imports": {
-    "#src/*": "./src/*.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.6",
