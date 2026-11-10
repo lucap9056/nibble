@@ -1,0 +1,197 @@
+import { chmod, mkdir, rename, rm } from "node:fs/promises";
+import path from "node:path";
+import * as nibble from "@lucap9056/nibble";
+import {
+  assertBubble,
+  type DefaultNibbleWebSocketContext,
+  NIBBLE_HTTP_METHODS,
+  type NibbleBubble,
+  type NibbleHttpMethod,
+} from "@lucap9056/nibble";
+import type { WebSocketHandler } from "bun";
+//
+// messages
+//
+import type {
+  BubbleControlMessage,
+  CloseMessage,
+  StartupMessage,
+} from "./bubble-messages";
+import {
+  BubbleControlType,
+  newErrorMessage,
+  newSuccessMessage,
+} from "./bubble-messages";
+
+Bun.plugin({
+  name: "nibble-core",
+  setup(build) {
+    build.module("@lucap9056/nibble", () => ({
+      exports: nibble,
+      loader: "object",
+    }));
+  },
+});
+
+//
+// Startup
+//
+
+let server: Bun.Server<unknown> | undefined;
+
+interface BubbleInfo<T = unknown> {
+  bubbleSourcePath: string;
+  bubbleSocketPath: string;
+  bubble: NibbleBubble<T>;
+}
+
+const loadBubble = async (
+  bubbleSourcePath: string,
+  bubbleSocketPath: string,
+): Promise<BubbleInfo> => {
+  if (server) {
+    throw new Error(`Bubble worker is already running: ${bubbleSourcePath}`);
+  }
+  const bubble = (await import(bubbleSourcePath)).default;
+  assertBubble(bubble);
+  return {
+    bubbleSourcePath,
+    bubbleSocketPath,
+    bubble,
+  };
+};
+
+const defaultUpgradeHandler = (_: Request): DefaultNibbleWebSocketContext => ({
+  connId: Bun.randomUUIDv7(),
+});
+
+const tryParseNibbleHttpMethod = (
+  value: string,
+): NibbleHttpMethod | undefined => {
+  const normalized = value.toLowerCase();
+  return NIBBLE_HTTP_METHODS.find((method) => method === normalized);
+};
+
+const startupServer = async ({ bubbleSocketPath, bubble }: BubbleInfo) => {
+  const unix = `${bubbleSocketPath}.temp`;
+
+  const upgradeHandler = bubble.handlers.wss?.upgrade ?? defaultUpgradeHandler;
+
+  const websocket: WebSocketHandler<unknown> = {};
+  if (bubble.handlers.wss) {
+    const { onconnect, onmessage, onclose } = bubble.handlers.wss;
+    if (onconnect) {
+      websocket.open = onconnect;
+    }
+    if (onmessage) {
+      websocket.message = onmessage;
+    }
+    if (onclose) {
+      websocket.close = onclose;
+    }
+  }
+
+  await Promise.all([
+    rm(bubbleSocketPath, { force: true }),
+    rm(unix, { force: true }),
+    mkdir(path.dirname(bubbleSocketPath), { recursive: true }),
+  ]);
+
+  server = Bun.serve({
+    unix,
+    fetch(req, server) {
+      const upgradeHeader = req.headers.get("upgrade")?.toLowerCase();
+      if (upgradeHeader === "websocket") {
+        if (bubble.handlers.wss) {
+          try {
+            const data = upgradeHandler(req);
+            if (server.upgrade(req, { data })) {
+              return;
+            } else {
+              return Response.json({ error: "Bad Request" }, { status: 400 });
+            }
+          } catch (err) {
+            console.error(err);
+            return Response.json(
+              { error: "Internal Server Error" },
+              { status: 500 },
+            );
+          }
+        }
+      } else {
+        const method = tryParseNibbleHttpMethod(req.method);
+        if (method) {
+          const handler = bubble.handlers[method];
+          if (handler) {
+            return handler(req);
+          }
+        }
+      }
+
+      return Response.json({ error: "Not Found" }, { status: 404 });
+    },
+    websocket,
+    error(err) {
+      console.error(err);
+      return Response.json({ error: "Internal Server Error" }, { status: 500 });
+    },
+  });
+
+  return chmod(unix, 0o666)
+    .then(() => rename(unix, bubbleSocketPath))
+    .catch((err: Error) => {
+      server?.stop(true);
+      server = undefined;
+      throw err;
+    });
+};
+
+const handleBubbleStartup = ({
+  id,
+  bubbleSourcePath,
+  bubbleSocketPath,
+}: StartupMessage) =>
+  loadBubble(bubbleSourcePath, bubbleSocketPath)
+    .then(startupServer)
+    .then(() => {
+      const msg = newSuccessMessage(id);
+      self.postMessage(msg);
+    })
+    .catch((err: Error) => {
+      const msg = newErrorMessage(id, err);
+      self.postMessage(msg);
+    });
+
+//
+// Close
+//
+
+const handleBubbleClose = async ({ id, force }: CloseMessage) => {
+  const timeout = (() => {
+    if (server && !force) {
+      const s = server;
+      return setTimeout(() => s.stop(true), 5000);
+    }
+    return undefined;
+  })();
+  const msg = await (server?.stop(force) ?? Promise.resolve())
+    .then(() => newSuccessMessage(id))
+    .catch((err: Error) => newErrorMessage(id, err));
+  if (timeout) {
+    clearTimeout(timeout);
+  }
+  self.postMessage(msg);
+  server = undefined;
+};
+
+//
+self.onmessage = (e: MessageEvent<BubbleControlMessage>) => {
+  const msg = e.data;
+
+  switch (msg.type) {
+    case BubbleControlType.Startup:
+      return handleBubbleStartup(msg);
+    case BubbleControlType.Close:
+      return handleBubbleClose(msg);
+  }
+};
