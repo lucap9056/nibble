@@ -22,6 +22,7 @@ import {
   newErrorMessage,
   newSuccessMessage,
 } from "./bubble-messages";
+import { BubbleResponses } from "./responses";
 
 Bun.plugin({
   name: "nibble-core",
@@ -108,14 +109,11 @@ const startupServer = async ({ bubbleSocketPath, bubble }: BubbleInfo) => {
             if (server.upgrade(req, { data })) {
               return;
             } else {
-              return Response.json({ error: "Bad Request" }, { status: 400 });
+              return BubbleResponses.badRequest();
             }
           } catch (err) {
             console.error(err);
-            return Response.json(
-              { error: "Internal Server Error" },
-              { status: 500 },
-            );
+            return BubbleResponses.internalServerError();
           }
         }
       } else {
@@ -128,12 +126,12 @@ const startupServer = async ({ bubbleSocketPath, bubble }: BubbleInfo) => {
         }
       }
 
-      return Response.json({ error: "Not Found" }, { status: 404 });
+      return BubbleResponses.notFound();
     },
     websocket,
     error(err) {
       console.error(err);
-      return Response.json({ error: "Internal Server Error" }, { status: 500 });
+      return BubbleResponses.internalServerError();
     },
   });
 
