@@ -3,9 +3,10 @@
   "version": "0.1.0",
   "type": "module",
   "exports": {
-    ".": "./src/core/index.ts"
+    ".": "./src/core/index.ts",
+    "./cors": "./src/cors/index.ts"
   },
-  "files": ["src/core"],
+  "files": ["src/core", "src/cors"],
   "scripts": {
     "start": "bun run src/main.ts",
     "build": "bun scripts/build.ts",

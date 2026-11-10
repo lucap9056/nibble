@@ -1,6 +1,5 @@
 import { chmod, mkdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
-import * as nibble from "@lucap9056/nibble";
 import {
   assertBubble,
   createDefaultNibbleWebSocketContext,
@@ -10,6 +9,7 @@ import {
   type NibbleWebSocketHandlers,
 } from "@lucap9056/nibble";
 import type { WebSocketHandler } from "bun";
+
 //
 // messages
 //
@@ -25,11 +25,22 @@ import {
 } from "./bubble-messages";
 import { BubbleResponses } from "./responses";
 
+//
+// export modules
+//
+
+import * as nibble from "@lucap9056/nibble";
+import * as nibbleCors from "@lucap9056/nibble/cors";
+
 Bun.plugin({
   name: "nibble-core",
   setup(build) {
     build.module("@lucap9056/nibble", () => ({
       exports: nibble,
+      loader: "object",
+    }));
+    build.module("@lucap9056/nibble/cors", () => ({
+      exports: nibbleCors,
       loader: "object",
     }));
   },
