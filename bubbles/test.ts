@@ -17,9 +17,11 @@ export default define({
         headers: { Allow: "GET, POST, PUT, PATCH, DELETE, OPTIONS" },
       }),
     wss: {
-      upgrade: (req): UserWebSocketContext => ({
-        user: req.headers.get("X-User") ?? "anonymous",
-      }),
+      upgrade: (req): UserWebSocketContext | Response => {
+        const user = req.headers.get("X-User");
+        if (!user) return new Response(null, { status: 401 });
+        return { user };
+      },
       onconnect: (ws) => { ws.send(`hello ${ws.data.user}`); }, // ws.data is UserWebSocketContext
       onmessage: (ws, message) => { ws.send(message); },
       onclose: (ws, code, reason) => { console.log(ws.data.user, code, reason);  },

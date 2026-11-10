@@ -6,7 +6,7 @@ export type NibbleWebSocket<T = DefaultNibbleWebSocketContext> =
   Bun.ServerWebSocket<T>;
 
 export interface NibbleWebSocketHandlers<T = DefaultNibbleWebSocketContext> {
-  upgrade?: (req: Request) => T;
+  upgrade?: (req: Request) => T | Response | Promise<T | Response>;
   onconnect?: (ws: NibbleWebSocket<T>) => void | Promise<void>;
   onmessage?: (
     ws: NibbleWebSocket<T>,
@@ -193,9 +193,11 @@ export function assertBubble(
  *         headers: { Allow: "GET, POST, PUT, PATCH, DELETE, OPTIONS" },
  *       }),
  *     wss: {
- *       upgrade: (req): UserWebSocketContext => ({
- *         user: req.headers.get("X-User") ?? "anonymous",
- *       }),
+ *       upgrade: (req): UserWebSocketContext | Response => {
+ *         const user = req.headers.get("X-User");
+ *         if (!user) return new Response(null, { status: 401 });
+ *         return { user };
+ *       },
  *       onconnect: (ws) => { ws.send(`hello ${ws.data.user}`) }, // ws.data is UserWebSocketContext
  *       onmessage: (ws, message) => { ws.send(message) },
  *       onclose: (ws, code, reason) => { console.log(ws.data.user, code, reason) },

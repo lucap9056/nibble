@@ -7,6 +7,7 @@ import {
   NIBBLE_HTTP_METHODS,
   type NibbleBubble,
   type NibbleHttpMethod,
+  type NibbleWebSocketHandlers,
 } from "@lucap9056/nibble";
 import type { WebSocketHandler } from "bun";
 //
@@ -73,6 +74,26 @@ const tryParseNibbleHttpMethod = (
   return NIBBLE_HTTP_METHODS.find((method) => method === normalized);
 };
 
+const handleUpgrade = async (
+  req: Request,
+  server: Bun.Server<unknown>,
+  upgradeHandler: NonNullable<NibbleWebSocketHandlers<unknown>["upgrade"]>,
+): Promise<Response | undefined> => {
+  try {
+    const result = await upgradeHandler(req);
+    if (result instanceof Response) {
+      return result;
+    }
+    if (server.upgrade(req, { data: result })) {
+      return;
+    }
+    return BubbleResponses.badRequest();
+  } catch (err) {
+    console.error(err);
+    return BubbleResponses.internalServerError();
+  }
+};
+
 const startupServer = async ({ bubbleSocketPath, bubble }: BubbleInfo) => {
   const unix = `${bubbleSocketPath}.temp`;
 
@@ -104,17 +125,7 @@ const startupServer = async ({ bubbleSocketPath, bubble }: BubbleInfo) => {
       const upgradeHeader = req.headers.get("upgrade")?.toLowerCase();
       if (upgradeHeader === "websocket") {
         if (bubble.handlers.wss) {
-          try {
-            const data = upgradeHandler(req);
-            if (server.upgrade(req, { data })) {
-              return;
-            } else {
-              return BubbleResponses.badRequest();
-            }
-          } catch (err) {
-            console.error(err);
-            return BubbleResponses.internalServerError();
-          }
+          return handleUpgrade(req, server, upgradeHandler);
         }
       } else {
         const method = tryParseNibbleHttpMethod(req.method);
