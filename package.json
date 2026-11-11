@@ -10,6 +10,7 @@
   "scripts": {
     "start": "bun run src/main.ts",
     "build": "bun scripts/build.ts",
+    "build:router": "bun scripts/build-router.ts",
     "proto": "bun scripts/proto.ts",
     "typecheck": "tsc -b",
     "lint": "biome lint .",

@@ -1,4 +1,6 @@
 import path from "node:path";
+import { ROUTER_BINARY_NAME } from "../src/config";
+import { buildRouter } from "./build-router";
 
 const rootPath = path.resolve(import.meta.dir, "..");
 const srcPath = path.join(rootPath, "src");
@@ -27,3 +29,5 @@ if (!result.success) {
 for (const output of result.outputs) {
   console.log(output.path);
 }
+
+console.log(buildRouter(path.join(rootPath, "dist", ROUTER_BINARY_NAME)));
