@@ -5,6 +5,7 @@ const rootPath = path.resolve(import.meta.dir, "..");
 const goModulePath = path.join(rootPath, "router");
 const goOutPath = path.join(goModulePath, "internal/routerpb");
 const tsOutPath = path.join(rootPath, "src/router/pb");
+const tsGeneratedPath = path.join(tsOutPath, "router");
 
 const TS_PROTO_OPTIONS = [
   "esModuleInterop=true",
@@ -28,7 +29,7 @@ const protoFiles = [
 ].map((file) => file.split(path.sep).join(path.posix.sep));
 
 await Promise.all(
-  [goOutPath, tsOutPath].map(async (outPath) => {
+  [goOutPath, tsGeneratedPath].map(async (outPath) => {
     await rm(outPath, { recursive: true, force: true });
     await mkdir(outPath, { recursive: true });
   }),
