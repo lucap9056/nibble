@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package router;
+
+option go_package = "router/internal/routerpb";
+
+message RouteEntry {
+  string name = 1;
+  string socket_path = 2;
+}
+
+message StartupCommand {
+  string listen = 1;
+  repeated RouteEntry routes = 2;
+}
+
+message SetRoutesCommand {
+  repeated RouteEntry routes = 1;
+}
+
+message CloseCommand {
+  bool force = 1;
+}
+
+message ControlMessage {
+  string id = 1;
+  oneof command {
+    StartupCommand startup = 2;
+    SetRoutesCommand set_routes = 3;
+    CloseCommand close = 4;
+  }
+}
+
+message Success {
+  optional uint32 port = 1;
+}
+
+message Failure {
+  string name = 1;
+  string message = 2;
+}
+
+message ResultMessage {
+  string id = 1;
+  oneof outcome {
+    Success success = 2;
+    Failure failure = 3;
+  }
+}
