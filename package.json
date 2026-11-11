@@ -22,5 +22,8 @@
     "@biomejs/biome": "^2.6.6",
     "@types/bun": "latest",
     "typescript": "^7"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "2.12.1"
   }
 }
