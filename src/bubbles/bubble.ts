@@ -1,6 +1,8 @@
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import config from "@/config";
+import { toRelativePosixPath } from "@/utils/path";
+import { PendingRequests } from "@/utils/pending-requests";
 import { BubbleAbortController } from "./abort-controller";
 import { ExitEvent, StateChangeEvent } from "./bubble-events";
 import {
@@ -13,7 +15,7 @@ import {
 } from "./bubble-messages";
 import { BubbleState } from "./bubble-state";
 
-type Resolvers = Pick<PromiseWithResolvers<void>, "resolve" | "reject">;
+const CLOSE_TIMEOUT_MS = 10000;
 
 interface BubbleWorkerHandlers {
   onStateChange: (state: BubbleState) => void;
@@ -36,7 +38,7 @@ class BubbleWorker extends Worker {
       });
   }
 
-  private readonly messages: Map<string, Resolvers>;
+  private readonly messages: PendingRequests<void>;
   private readonly ctr: BubbleAbortController;
   private readonly onStateChange: (state: BubbleState) => void;
   private currentState: BubbleState = BubbleState.Idle;
@@ -45,7 +47,7 @@ class BubbleWorker extends Worker {
 
   constructor({ onStateChange, onExit }: BubbleWorkerHandlers) {
     super(new URL("./bubble.worker.ts", import.meta.url));
-    const messages = new Map<string, Resolvers>();
+    const messages = new PendingRequests<void>();
     const ctr = new BubbleAbortController();
     const exit = Promise.withResolvers<void>();
     exit.promise.catch(() => {});
@@ -56,12 +58,9 @@ class BubbleWorker extends Worker {
       BubbleWorker.unlinkSocket(this.socketPath).finally(() => {
         const error = BubbleAbortController.getAbortReason(ctr.signal);
 
-        for (const msg of messages.values()) {
-          const pendingError =
-            error ?? new Error("Bubble worker exited before responding");
-          msg.reject(pendingError);
-        }
-        messages.clear();
+        messages.rejectAll(
+          error ?? new Error("Bubble worker exited before responding"),
+        );
 
         this.setState(BubbleState.Idle);
         if (error) {
@@ -74,21 +73,17 @@ class BubbleWorker extends Worker {
     });
 
     this.addEventListener("message", (e: MessageEvent<ResultMessage>) => {
-      const msg = messages.get(e.data.id);
-      if (msg === undefined) return;
-
-      const { resolve, reject } = msg;
-      messages.delete(e.data.id);
-
       switch (e.data.type) {
         case BubbleResultType.Success:
-          return resolve();
+          messages.resolve(e.data.id);
+          return;
         case BubbleResultType.Error: {
           const { name, message, stack } = e.data.error;
           const err = new Error(message);
           err.name = name;
           err.stack = stack;
-          return reject(err);
+          messages.reject(e.data.id, err);
+          return;
         }
       }
     });
@@ -100,13 +95,9 @@ class BubbleWorker extends Worker {
     });
 
     this.addEventListener("messageerror", () => {
-      const msgs = messages.entries();
-      for (const [id, message] of msgs) {
-        message.reject(
-          new Error("Failed to deserialize message from bubble worker"),
-        );
-        messages.delete(id);
-      }
+      messages.rejectAll(
+        new Error("Failed to deserialize message from bubble worker"),
+      );
       if (this.currentState !== BubbleState.Running) {
         ctr.abort(
           new Error(
@@ -123,8 +114,7 @@ class BubbleWorker extends Worker {
   }
 
   public send(msg: BubbleControlMessage): Promise<void> {
-    const { promise, resolve, reject } = Promise.withResolvers<void>();
-    this.messages.set(msg.id, { resolve, reject });
+    const promise = this.messages.register(msg.id);
     this.postMessage(msg);
 
     switch (msg.type) {
@@ -134,11 +124,13 @@ class BubbleWorker extends Worker {
       }
       case BubbleControlType.Close: {
         const timeout = setTimeout(() => {
-          reject(
-            new Error("Bubble worker did not respond to close in 10000ms"),
+          this.messages.reject(
+            msg.id,
+            new Error(
+              `Bubble worker did not respond to close in ${CLOSE_TIMEOUT_MS}ms`,
+            ),
           );
-          this.messages.delete(msg.id);
-        }, 10000);
+        }, CLOSE_TIMEOUT_MS);
 
         promise
           .finally(() => {
@@ -187,41 +179,19 @@ const IDLE_STATUS: BubbleStatus = new BubbleStatus(Promise.resolve());
 export class Bubble extends EventTarget {
   private static SOURCE_EXTENSION = /\.[cm]?[jt]sx?$/;
 
-  private static isOutsideDir(relativePath: string): boolean {
-    return (
-      relativePath === "" ||
-      relativePath === ".." ||
-      relativePath.startsWith(`..${path.sep}`) ||
-      path.isAbsolute(relativePath)
-    );
-  }
-
-  private static resolveSocketPath(absoluteSourcePath: string): string {
-    const relativePath = path.relative(
-      config.bubbleSourceDir,
-      absoluteSourcePath,
-    );
-
-    if (Bubble.isOutsideDir(relativePath)) {
-      throw new Error(
-        `Bubble source must be inside ${config.bubbleSourceDir}: ${absoluteSourcePath}`,
-      );
-    }
-
-    const socketName = relativePath.replace(Bubble.SOURCE_EXTENSION, "");
-    return `${path.join(config.bubbleSocketDir, socketName)}.sock`;
-  }
-
   private readonly sourcePath: string;
   private readonly socketPath: string;
   private status: BubbleStatus = IDLE_STATUS;
 
   constructor(sourcePath: string) {
     super();
-    const absoluteSourcePath = path.resolve(sourcePath);
-    const absoluteSocketPath = Bubble.resolveSocketPath(absoluteSourcePath);
-    this.sourcePath = absoluteSourcePath;
-    this.socketPath = absoluteSocketPath;
+    const relativeSourcePath = toRelativePosixPath(
+      config.bubbleSourceDir,
+      sourcePath,
+    );
+    const socketName = relativeSourcePath.replace(Bubble.SOURCE_EXTENSION, "");
+    this.sourcePath = path.join(config.bubbleSourceDir, relativeSourcePath);
+    this.socketPath = `${path.join(config.bubbleSocketDir, socketName)}.sock`;
   }
 
   private waitForExit(worker: BubbleWorker, error?: Error): Promise<void> {
