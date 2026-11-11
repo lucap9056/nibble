@@ -3,6 +3,7 @@ import path from "node:path";
 export interface Config {
   bubbleSourceDir: string;
   bubbleSocketDir: string;
+  databasePath: string;
 }
 
 const rootPath = Bun.isStandaloneExecutable
@@ -15,6 +16,9 @@ const config: Config = {
   ),
   bubbleSocketDir: path.resolve(
     Bun.env.BUBBLE_SOCKET_DIR ?? path.join(rootPath, "sockets"),
+  ),
+  databasePath: path.resolve(
+    Bun.env.DATABASE ?? path.join(rootPath, "bubbles.db"),
   ),
 };
 
