@@ -18,6 +18,8 @@ const { Starting, Running, Stopping, Idle } = BubbleState;
 
 const WAIT_TIMEOUT_MS = 1000;
 const SETTLE_MS = 20;
+const EXITED_BEFORE_RESPONDING = "Bubble worker exited before responding";
+const CLOSED_UNEXPECTEDLY = "Bubble worker closed unexpectedly";
 
 const waitUntil = async (predicate: () => boolean) => {
   const deadline = Date.now() + WAIT_TIMEOUT_MS;
@@ -76,10 +78,15 @@ class FakeWorker extends EventTarget {
     this.dispatchResult(result);
   }
 
-  public crash(message = "crashed") {
+  public crash(message: string) {
     const error = new Error(message);
     const errorEvent = new ErrorEvent("error", { error, message });
     this.dispatchEvent(errorEvent);
+  }
+
+  public closeUnexpectedly() {
+    const closeEvent = new Event("close");
+    this.dispatchEvent(closeEvent);
   }
 
   private dispatchResult(data: ResultMessage) {
@@ -137,19 +144,17 @@ const setup = () => {
     return worker;
   };
 
-  const toEvent = ([state, worker]: ExpectedEvent) =>
-    state === Idle
-      ? { id: "", socketPath: "", state }
-      : { id: worker.id, socketPath: worker.socketPath, state };
-
   const expectNext = async (...expected: ExpectedEvent[]) => {
     const expectedCount = checked + expected.length;
-    const hasExpectedCount = () => events.length >= expectedCount;
-    await waitUntil(hasExpectedCount);
+    await waitUntil(() => events.length >= expectedCount);
     await Bun.sleep(SETTLE_MS);
 
     const actualEvents = events.slice(checked);
-    const expectedEvents = expected.map(toEvent);
+    const expectedEvents = expected.map(([state, worker]) =>
+      state === Idle
+        ? { id: "", socketPath: "", state }
+        : { id: worker.id, socketPath: worker.socketPath, state },
+    );
     expect(actualEvents).toEqual(expectedEvents);
     checked = events.length;
   };
@@ -192,7 +197,7 @@ test("outdated start while running is rejected", async () => {
   await expectNext([Starting, current], [Running, current]);
 
   const outdated = start(15);
-  await expect(outdated.started).rejects.toThrow();
+  await expect(outdated.started).rejects.toThrow(EXITED_BEFORE_RESPONDING);
   expect(outdated.worker.terminated).toBe(true);
   await expectNoNewEvents();
 });
@@ -206,7 +211,7 @@ test("pending successor takes over after current crashes", async () => {
   const successor = start(30);
   await expectNoNewEvents();
 
-  current.crash();
+  current.crash("crashed");
   await expectNext([Starting, successor.worker]);
 
   await successor.worker.reply(Startup);
@@ -220,8 +225,36 @@ test("crash without successor goes Idle", async () => {
   const worker = await run(10);
   await expectNext([Starting, worker], [Running, worker]);
 
-  worker.crash();
+  worker.crash("crashed");
   await expectNext([Stopping, worker], [Idle, worker]);
+});
+
+test("crash during startup rejects with the crash error", async () => {
+  const { start, expectNext } = setup();
+  const crashMessage = "crashed during startup";
+
+  const crashing = start(10);
+  crashing.worker.crash(crashMessage);
+  await expect(crashing.started).rejects.toThrow(crashMessage);
+  await expectNext(
+    [Starting, crashing.worker],
+    [Stopping, crashing.worker],
+    [Idle, crashing.worker],
+  );
+});
+
+test("unexpected close during startup rejects and goes Idle", async () => {
+  const { start, expectNext } = setup();
+
+  const closing = start(10);
+  closing.worker.closeUnexpectedly();
+  await expect(closing.started).rejects.toThrow(CLOSED_UNEXPECTEDLY);
+  expect(closing.worker.terminated).toBe(true);
+  await expectNext(
+    [Starting, closing.worker],
+    [Stopping, closing.worker],
+    [Idle, closing.worker],
+  );
 });
 
 test("startup failure rejects and goes Idle", async () => {
@@ -243,11 +276,11 @@ test("newer start replaces starting worker", async () => {
 
   const replaced = start(50);
   const latest = start(70);
-  await expect(replaced.started).rejects.toThrow();
+  await expect(replaced.started).rejects.toThrow(EXITED_BEFORE_RESPONDING);
   expect(replaced.worker.terminated).toBe(true);
 
   const outdated = start(60);
-  await expect(outdated.started).rejects.toThrow();
+  await expect(outdated.started).rejects.toThrow(EXITED_BEFORE_RESPONDING);
   expect(outdated.worker.terminated).toBe(true);
   expect(latest.worker.terminated).toBe(false);
 
@@ -263,10 +296,8 @@ test("force stop aborts pending and closes running", async () => {
   await expectNext([Starting, running], [Running, running]);
 
   const pending = start(20);
-  const pendingResult = pending.started.catch((err: Error) => err);
   const stopped = bubble.stop(true);
-  const pendingError = await pendingResult;
-  expect(pendingError).toBeInstanceOf(Error);
+  await expect(pending.started).rejects.toThrow(EXITED_BEFORE_RESPONDING);
 
   const runningClose = await running.waitForMessage(Close);
   expect(runningClose).toMatchObject({ force: true });
