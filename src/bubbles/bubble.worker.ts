@@ -1,4 +1,4 @@
-import { chmod, mkdir, rename, rm } from "node:fs/promises";
+import { chmod, mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import {
   assertBubble,
@@ -102,8 +102,6 @@ const handleUpgrade = async (
 };
 
 const startupServer = async ({ bubbleSocketPath, bubble }: BubbleInfo) => {
-  const unix = `${bubbleSocketPath}.temp`;
-
   const upgradeHandler =
     bubble.handlers.wss?.upgrade ?? createDefaultNibbleWebSocketContext;
 
@@ -123,12 +121,11 @@ const startupServer = async ({ bubbleSocketPath, bubble }: BubbleInfo) => {
 
   await Promise.all([
     rm(bubbleSocketPath, { force: true }),
-    rm(unix, { force: true }),
     mkdir(path.dirname(bubbleSocketPath), { recursive: true }),
   ]);
 
   server = Bun.serve({
-    unix,
+    unix: bubbleSocketPath,
     fetch(req, server) {
       const upgradeHeader = req.headers.get("upgrade")?.toLowerCase();
       if (upgradeHeader === "websocket") {
@@ -154,13 +151,11 @@ const startupServer = async ({ bubbleSocketPath, bubble }: BubbleInfo) => {
     },
   });
 
-  return chmod(unix, 0o666)
-    .then(() => rename(unix, bubbleSocketPath))
-    .catch((err: Error) => {
-      server?.stop(true);
-      server = undefined;
-      throw err;
-    });
+  return chmod(bubbleSocketPath, 0o666).catch((err: Error) => {
+    server?.stop(true);
+    server = undefined;
+    throw err;
+  });
 };
 
 const handleBubbleStartup = ({
