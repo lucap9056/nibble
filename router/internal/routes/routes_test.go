@@ -9,38 +9,48 @@ import (
 )
 
 func TestNewTable_RejectsInvalidEntries(t *testing.T) {
-	invalid := [][]routes.Entry{
-		{{Name: "", SocketPath: "a"}},
-		{{Name: "a/b", SocketPath: "a"}},
-		{{Name: "a", SocketPath: ""}},
-		{{Name: "a", SocketPath: "x"}, {Name: "a", SocketPath: "y"}},
+	invalidEntries := [][]routes.Entry{
+		{{RoutePath: "", SocketPath: "x"}},
+		{{RoutePath: "/", SocketPath: "x"}},
+		{{RoutePath: "api", SocketPath: "x"}},
+		{{RoutePath: "/api/", SocketPath: "x"}},
+		{{RoutePath: "/a//b", SocketPath: "x"}},
+		{{RoutePath: "/a/./b", SocketPath: "x"}},
+		{{RoutePath: "/a/../b", SocketPath: "x"}},
+		{{RoutePath: "/a b", SocketPath: "x"}},
+		{{RoutePath: "/a", SocketPath: ""}},
+		{{RoutePath: "/a", SocketPath: "x"}, {RoutePath: "/a", SocketPath: "y"}},
 	}
-	for _, entries := range invalid {
+	for _, entries := range invalidEntries {
 		_, err := routes.NewTable(entries)
 		assert.Error(t, err, "%+v", entries)
 	}
 }
 
 func TestResolve(t *testing.T) {
-	api := routes.Entry{Name: "api", SocketPath: "api.sock"}
-	table, err := routes.NewTable([]routes.Entry{api})
+	api := routes.Entry{RoutePath: "/api", SocketPath: "api.sock"}
+	user := routes.Entry{RoutePath: "/api/user", SocketPath: "user.sock"}
+	entries := []routes.Entry{api, user}
+	table, err := routes.NewTable(entries)
 	require.NoError(t, err)
 
-	matches := map[string]string{
-		"/api":                 "/",
-		"/api/":                "/",
-		"/api?x=1":             "/?x=1",
-		"/api/users/1?x=1&y=2": "/users/1?x=1&y=2",
-		"/api//double":         "//double",
+	matches := map[string]routes.Resolved{
+		"/api":            {Entry: api, Prefix: "/api", UpstreamPath: "/"},
+		"/api/?x=1":       {Entry: api, Prefix: "/api", UpstreamPath: "/?x=1"},
+		"/api//double":    {Entry: api, Prefix: "/api", UpstreamPath: "//double"},
+		"/api/users":      {Entry: api, Prefix: "/api", UpstreamPath: "/users"},
+		"/api/user":       {Entry: user, Prefix: "/api/user", UpstreamPath: "/"},
+		"/api/user/1?x=1": {Entry: user, Prefix: "/api/user", UpstreamPath: "/1?x=1"},
 	}
-	for target, upstreamPath := range matches {
+	for target, expected := range matches {
 		resolved, ok := table.Resolve(target)
 		require.True(t, ok, target)
-		assert.Equal(t, routes.Resolved{Entry: api, Prefix: "/api", UpstreamPath: upstreamPath}, resolved, target)
+		assert.Equal(t, expected, resolved, target)
 	}
 
-	for _, target := range []string{"/", "/apix", "/apix/y", "/other", "api", "*", ""} {
+	unmatchedTargets := []string{"/", "/apix", "/other", "api", "*", ""}
+	for _, target := range unmatchedTargets {
 		_, ok := table.Resolve(target)
-		assert.False(t, ok, "%q should not match", target)
+		assert.False(t, ok, target)
 	}
 }

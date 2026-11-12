@@ -33,7 +33,7 @@ func newFailureResult(id string, err error) *routerpb.ResultMessage {
 func toRouteEntries(entries []*routerpb.RouteEntry) []routes.Entry {
 	converted := make([]routes.Entry, len(entries))
 	for i, entry := range entries {
-		converted[i] = routes.Entry{Name: entry.GetName(), SocketPath: entry.GetSocketPath()}
+		converted[i] = routes.Entry{RoutePath: entry.GetRoutePath(), SocketPath: entry.GetSocketPath()}
 	}
 	return converted
 }

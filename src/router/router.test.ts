@@ -6,14 +6,17 @@ import path from "node:path";
 import { gzipSync } from "node:zlib";
 import { BinaryReader } from "@bufbuild/protobuf/wire";
 import config from "@/config";
+import type { RouteEntry } from "./pb";
 import { ControlMessage } from "./pb/router/router";
 import { RouterProcess } from "./router";
 
 const USER = "test-user";
-
-const newRouter = () => new RouterProcess(config.routerBinaryPath);
-
-const makeSocketDir = () => mkdtemp(path.join(os.tmpdir(), "nibble-router-"));
+const HOST = "127.0.0.1";
+const LISTEN = `${HOST}:0`;
+const GZIP_BODY = "compressed-body";
+const TMP_DIR = os.tmpdir();
+const SOCKET_DIR_PREFIX = path.join(TMP_DIR, "nibble-router-");
+const { routerBinaryPath } = config;
 
 interface FakeBubble {
   socketPath: string;
@@ -26,7 +29,7 @@ const startFakeBubble = (socketPath: string, label: string): FakeBubble => {
   const server = Bun.serve<{ user: string; path: string }>({
     unix: socketPath,
     fetch(req, server) {
-      const url = new URL(req.url);
+      const { pathname, search } = new URL(req.url);
 
       if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
         const user = req.headers.get("x-user");
@@ -37,16 +40,14 @@ const startFakeBubble = (socketPath: string, label: string): FakeBubble => {
           });
         }
         const offered = req.headers.get("sec-websocket-protocol") ?? "";
-        server.upgrade(req, {
-          data: { user, path: url.pathname },
-          headers: offered.includes("chat")
-            ? { "Sec-WebSocket-Protocol": "chat" }
-            : undefined,
-        });
+        const headers = offered.includes("chat")
+          ? { "Sec-WebSocket-Protocol": "chat" }
+          : undefined;
+        server.upgrade(req, { data: { user, path: pathname }, headers });
         return undefined;
       }
 
-      switch (url.pathname) {
+      switch (pathname) {
         case "/echo":
           return new Response(req.body);
         case "/cookies": {
@@ -55,23 +56,29 @@ const startFakeBubble = (socketPath: string, label: string): FakeBubble => {
           headers.append("Set-Cookie", "b=2");
           return new Response("created", { status: 201, headers });
         }
-        case "/gzip":
-          return new Response(gzipSync("compressed-body"), {
+        case "/gzip": {
+          const body = gzipSync(GZIP_BODY);
+          return new Response(body, {
             headers: { "Content-Encoding": "gzip" },
           });
-        default:
+        }
+        default: {
+          const forwardedFor = req.headers.get("x-forwarded-for");
+          const forwardedPrefix = req.headers.get("x-forwarded-prefix");
           return Response.json({
             label,
-            path: url.pathname,
-            search: url.search,
-            forwardedFor: req.headers.get("x-forwarded-for"),
-            forwardedPrefix: req.headers.get("x-forwarded-prefix"),
+            path: pathname,
+            search,
+            forwardedFor,
+            forwardedPrefix,
           });
+        }
       }
     },
     websocket: {
       open(ws) {
-        ws.send(`hello ${ws.data.user} at ${ws.data.path} from ${label}`);
+        const greeting = `hello ${ws.data.user} at ${ws.data.path} from ${label}`;
+        ws.send(greeting);
       },
       message(ws, message) {
         if (message === "close-me") {
@@ -91,7 +98,7 @@ const startFakeBubble = (socketPath: string, label: string): FakeBubble => {
 const rawRequest = (port: number, request: string) =>
   new Promise<{ response: string; closed: boolean }>((resolve) => {
     let response = "";
-    const socket = net.connect({ port, host: "127.0.0.1" }, () =>
+    const socket = net.connect({ port, host: HOST }, () =>
       socket.write(request),
     );
     socket.on("data", (chunk) => {
@@ -107,7 +114,7 @@ const rawRequest = (port: number, request: string) =>
 
 const upgradeRequest = (target: string, extraHeaders = "") =>
   `GET ${target} HTTP/1.1\r\n` +
-  "Host: 127.0.0.1\r\n" +
+  `Host: ${HOST}\r\n` +
   "Connection: Upgrade\r\n" +
   "Upgrade: websocket\r\n" +
   "Sec-WebSocket-Version: 13\r\n" +
@@ -115,14 +122,9 @@ const upgradeRequest = (target: string, extraHeaders = "") =>
   extraHeaders +
   "\r\n";
 
-const countStatusLines = (response: string) =>
-  response.match(/^HTTP\/1\.1 \d{3}/gm)?.length ?? 0;
-
 const openWebSocket = (url: string, protocols?: string[]) => {
-  const ws = new WebSocket(url, {
-    headers: { "X-User": USER },
-    protocols,
-  } as unknown as string[]);
+  const options = { headers: { "X-User": USER }, protocols };
+  const ws = new WebSocket(url, options as unknown as string[]);
   const inbox: string[] = [];
   const waiters: ((message: string) => void)[] = [];
   const opened = Promise.withResolvers<void>();
@@ -155,24 +157,26 @@ describe("RouterProcess proxy", () => {
   let router: RouterProcess;
   let port: number;
   let baseUrl: string;
-
-  const defaultRoutes = () => [
-    { name: "alpha", socketPath: alpha.socketPath },
-    { name: "missing", socketPath: path.join(socketDir, "missing.sock") },
-  ];
-
-  const fetchLabel = async (target: string) =>
-    ((await (await fetch(`${baseUrl}${target}`)).json()) as { label: string })
-      .label;
+  let wsBaseUrl: string;
+  let defaultRoutes: RouteEntry[];
 
   beforeAll(async () => {
-    socketDir = await makeSocketDir();
-    alpha = startFakeBubble(path.join(socketDir, "alpha.sock"), "alpha");
-    beta = startFakeBubble(path.join(socketDir, "beta.sock"), "beta");
+    socketDir = await mkdtemp(SOCKET_DIR_PREFIX);
+    const alphaSocketPath = path.join(socketDir, "alpha.sock");
+    const betaSocketPath = path.join(socketDir, "beta.sock");
+    const missingSocketPath = path.join(socketDir, "missing.sock");
+    alpha = startFakeBubble(alphaSocketPath, "alpha");
+    beta = startFakeBubble(betaSocketPath, "beta");
+    defaultRoutes = [
+      { routePath: "/alpha", socketPath: alphaSocketPath },
+      { routePath: "/alpha/nested", socketPath: betaSocketPath },
+      { routePath: "/missing", socketPath: missingSocketPath },
+    ];
 
-    router = newRouter();
-    port = await router.start("127.0.0.1:0", defaultRoutes());
-    baseUrl = `http://127.0.0.1:${port}`;
+    router = new RouterProcess(routerBinaryPath);
+    port = await router.start(LISTEN, defaultRoutes);
+    baseUrl = `http://${HOST}:${port}`;
+    wsBaseUrl = `ws://${HOST}:${port}`;
   });
 
   afterAll(async () => {
@@ -184,59 +188,82 @@ describe("RouterProcess proxy", () => {
 
   describe("HTTP", () => {
     test("strips the prefix, keeps the query and overrides forwarded headers", async () => {
-      const res = await fetch(`${baseUrl}/alpha/users/1?x=1`, {
+      const url = `${baseUrl}/alpha/users/1?x=1`;
+      const res = await fetch(url, {
         headers: { "X-Forwarded-For": "6.6.6.6" },
       });
-      expect(await res.json()).toMatchObject({
+      const body = await res.json();
+      expect(body).toMatchObject({
+        label: "alpha",
         path: "/users/1",
         search: "?x=1",
-        forwardedFor: "127.0.0.1",
+        forwardedFor: HOST,
         forwardedPrefix: "/alpha",
       });
     });
 
-    test("streams bodies and preserves status and headers verbatim", async () => {
-      const payload = crypto.getRandomValues(new Uint8Array(1024 * 1024));
-      const echo = await fetch(`${baseUrl}/alpha/echo`, {
-        method: "POST",
-        body: payload,
+    test("routes to the longest matching path", async () => {
+      const url = `${baseUrl}/alpha/nested/x`;
+      const res = await fetch(url);
+      const body = await res.json();
+      expect(body).toMatchObject({
+        label: "beta",
+        path: "/x",
+        forwardedPrefix: "/alpha/nested",
       });
-      expect(new Uint8Array(await echo.arrayBuffer())).toEqual(payload);
+    });
 
-      const cookies = await fetch(`${baseUrl}/alpha/cookies`);
+    test("streams bodies and preserves status and headers verbatim", async () => {
+      const payloadBuffer = new Uint8Array(1024 * 1024);
+      const payload = crypto.getRandomValues(payloadBuffer);
+      const echoUrl = `${baseUrl}/alpha/echo`;
+      const echo = await fetch(echoUrl, { method: "POST", body: payload });
+      const echoed = await echo.bytes();
+      expect(echoed).toEqual(payload);
+
+      const cookiesUrl = `${baseUrl}/alpha/cookies`;
+      const cookies = await fetch(cookiesUrl);
+      const customHeader = cookies.headers.get("x-custom");
+      const setCookies = cookies.headers.getSetCookie();
       expect(cookies.status).toBe(201);
-      expect(cookies.headers.get("x-custom")).toBe("yes");
-      expect(cookies.headers.getSetCookie()).toEqual(["a=1", "b=2"]);
+      expect(customHeader).toBe("yes");
+      expect(setCookies).toEqual(["a=1", "b=2"]);
 
-      const gzip = await fetch(`${baseUrl}/alpha/gzip`, { decompress: false });
-      expect(gzip.headers.get("content-encoding")).toBe("gzip");
-      expect(new Uint8Array(await gzip.arrayBuffer())).toEqual(
-        new Uint8Array(gzipSync("compressed-body")),
-      );
+      const gzipUrl = `${baseUrl}/alpha/gzip`;
+      const gzip = await fetch(gzipUrl, { decompress: false });
+      const compressed = await gzip.bytes();
+      const contentEncoding = gzip.headers.get("content-encoding");
+      const gzipped = gzipSync(GZIP_BODY);
+      const expected = new Uint8Array(gzipped);
+      expect(contentEncoding).toBe("gzip");
+      expect(compressed).toEqual(expected);
     });
 
     test.each([
       ["/alphabet", 404, "Not Found"],
       ["/missing/x", 502, "Bad Gateway"],
     ])("%s responds %d", async (target, status, error) => {
-      const res = await fetch(`${baseUrl}${target}`);
+      const url = `${baseUrl}${target}`;
+      const res = await fetch(url);
+      const body = await res.json();
       expect(res.status).toBe(status);
-      expect(await res.json()).toEqual({ error });
+      expect(body).toEqual({ error });
     });
   });
 
   describe("WebSocket", () => {
     test("tunnels messages, subprotocol and client close", async () => {
-      const session = openWebSocket(`ws://127.0.0.1:${port}/alpha/chat`, [
-        "superchat",
-        "chat",
-      ]);
+      const url = `${wsBaseUrl}/alpha/chat`;
+      const protocols = ["superchat", "chat"];
+      const session = openWebSocket(url, protocols);
       await session.opened;
+      const greeting = await session.next();
       expect(session.ws.protocol).toBe("chat");
-      expect(await session.next()).toBe(`hello ${USER} at /chat from alpha`);
+      expect(greeting).toBe(`hello ${USER} at /chat from alpha`);
 
       session.ws.send("ping");
-      expect(await session.next()).toBe("ping");
+      const echoed = await session.next();
+      expect(echoed).toBe("ping");
 
       session.ws.close(4321, "client-bye");
       await session.closed;
@@ -245,42 +272,52 @@ describe("RouterProcess proxy", () => {
     });
 
     test("propagates close initiated by the bubble", async () => {
-      const session = openWebSocket(`ws://127.0.0.1:${port}/alpha/ws`);
+      const url = `${wsBaseUrl}/alpha/ws`;
+      const session = openWebSocket(url);
       await session.next();
       session.ws.send("close-me");
       expect(await session.closed).toEqual([4001, "server-bye"]);
     });
 
     test("returns a rejected upgrade verbatim and closes without forwarding pipelined bytes", async () => {
-      const { response, closed } = await rawRequest(
-        port,
-        `${upgradeRequest("/alpha/ws")}GET /alpha/pipelined HTTP/1.1\r\nHost: x\r\n\r\n`,
-      );
-      expect(response.startsWith("HTTP/1.1 401")).toBe(true);
+      const upgrade = upgradeRequest("/alpha/ws");
+      const pipelined = "GET /alpha/pipelined HTTP/1.1\r\nHost: x\r\n\r\n";
+      const request = `${upgrade}${pipelined}`;
+      const { response, closed } = await rawRequest(port, request);
+      const statusLines = response.match(/^HTTP\/1\.1 \d{3}/gm) ?? [];
+      expect(response).toStartWith("HTTP/1.1 401");
       expect(response).toMatch(/x-reason: no-user/i);
-      expect(response.endsWith("need user")).toBe(true);
-      expect(countStatusLines(response)).toBe(1);
+      expect(response).toEndWith("need user");
+      expect(statusLines).toHaveLength(1);
       expect(closed).toBe(true);
     });
 
     test("returns 502 and closes the connection when the bubble is unreachable", async () => {
-      const { response, closed } = await rawRequest(
-        port,
-        upgradeRequest("/missing/ws", `X-User: ${USER}\r\n`),
-      );
-      expect(response.startsWith("HTTP/1.1 502 Bad Gateway")).toBe(true);
+      const userHeader = `X-User: ${USER}\r\n`;
+      const request = upgradeRequest("/missing/ws", userHeader);
+      const { response, closed } = await rawRequest(port, request);
+      expect(response).toStartWith("HTTP/1.1 502 Bad Gateway");
       expect(closed).toBe(true);
     });
   });
 
   describe("setRoutes", () => {
     test("swaps the route table", async () => {
-      await router.setRoutes([{ name: "alpha", socketPath: beta.socketPath }]);
-      expect(await fetchLabel("/alpha")).toBe("beta");
-      expect((await fetch(`${baseUrl}/missing`)).status).toBe(404);
+      const alphaUrl = `${baseUrl}/alpha`;
+      const missingUrl = `${baseUrl}/missing`;
+      const swappedRoutes = [{ routePath: "/alpha", socketPath: beta.socketPath }];
 
-      await router.setRoutes(defaultRoutes());
-      expect(await fetchLabel("/alpha")).toBe("alpha");
+      await router.setRoutes(swappedRoutes);
+      const swapped = await fetch(alphaUrl);
+      const removed = await fetch(missingUrl);
+      const swappedBody = await swapped.json();
+      expect(swappedBody).toMatchObject({ label: "beta" });
+      expect(removed.status).toBe(404);
+
+      await router.setRoutes(defaultRoutes);
+      const restored = await fetch(alphaUrl);
+      const restoredBody = await restored.json();
+      expect(restoredBody).toMatchObject({ label: "alpha" });
     });
   });
 });
@@ -288,13 +325,14 @@ describe("RouterProcess proxy", () => {
 describe("RouterProcess lifecycle", () => {
   test("rejects start and exited with the same error when the port is in use", async () => {
     const occupied = Bun.serve({
-      hostname: "127.0.0.1",
+      hostname: HOST,
       port: 0,
       fetch: () => new Response(),
     });
-    const router = newRouter();
+    const occupiedListen = `${HOST}:${occupied.port}`;
+    const router = new RouterProcess(routerBinaryPath);
     const startError = await router
-      .start(`127.0.0.1:${occupied.port}`)
+      .start(occupiedListen)
       .catch((err: Error) => err);
     expect(startError).toBeInstanceOf(Error);
     await expect(router.exited).rejects.toBe(startError as Error);
@@ -302,22 +340,25 @@ describe("RouterProcess lifecycle", () => {
   });
 
   test("graceful stop releases the port and resolves exited", async () => {
-    const router = newRouter();
-    const port = await router.start("127.0.0.1:0");
+    const router = new RouterProcess(routerBinaryPath);
+    const port = await router.start(LISTEN);
+    const url = `http://${HOST}:${port}/x`;
     await router.stop();
     await router.exited;
-    await expect(fetch(`http://127.0.0.1:${port}/x`)).rejects.toThrow();
+    const fetching = fetch(url);
+    await expect(fetching).rejects.toThrow();
   });
 
   test("force stop closes open tunnels", async () => {
-    const socketDir = await makeSocketDir();
-    const bubble = startFakeBubble(path.join(socketDir, "b.sock"), "b");
-    const router = newRouter();
-    const port = await router.start("127.0.0.1:0", [
-      { name: "b", socketPath: bubble.socketPath },
-    ]);
+    const socketDir = await mkdtemp(SOCKET_DIR_PREFIX);
+    const socketPath = path.join(socketDir, "b.sock");
+    const bubble = startFakeBubble(socketPath, "b");
+    const routes = [{ routePath: "/b", socketPath }];
+    const router = new RouterProcess(routerBinaryPath);
+    const port = await router.start(LISTEN, routes);
 
-    const session = openWebSocket(`ws://127.0.0.1:${port}/b`);
+    const url = `ws://${HOST}:${port}/b`;
+    const session = openWebSocket(url);
     await session.opened;
     await router.stop(true);
     const [code] = await session.closed;
@@ -328,21 +369,22 @@ describe("RouterProcess lifecycle", () => {
   });
 
   test("rejects setRoutes while stopping and after exit", async () => {
-    const router = newRouter();
-    await router.start("127.0.0.1:0");
+    const router = new RouterProcess(routerBinaryPath);
+    await router.start(LISTEN);
 
     const stopping = router.stop();
-    await expect(router.setRoutes([])).rejects.toThrow("stopping");
+    const settingWhileStopping = router.setRoutes([]);
+    await expect(settingWhileStopping).rejects.toThrow("stopping");
     await stopping;
-    await expect(router.setRoutes([])).rejects.toThrow("exited");
+    const settingAfterExit = router.setRoutes([]);
+    await expect(settingAfterExit).rejects.toThrow("exited");
   });
 
   test("repeated stop sends a single close and waits for exit", async () => {
-    const router = newRouter();
-    const { stdin } = (router as unknown as { child: Bun.Subprocess<"pipe"> })
-      .child;
-    const write = spyOn(stdin, "write");
-    await router.start("127.0.0.1:0");
+    const router = new RouterProcess(routerBinaryPath);
+    const { child } = router as unknown as { child: Bun.Subprocess<"pipe"> };
+    const write = spyOn(child.stdin, "write");
+    await router.start(LISTEN);
 
     let hasExited = false;
     router.exited.then(() => {
@@ -356,7 +398,8 @@ describe("RouterProcess lifecycle", () => {
 
     const commands = write.mock.calls.map(([chunk]) => {
       const reader = new BinaryReader(chunk as Uint8Array);
-      return ControlMessage.decode(reader, reader.uint32()).command?.$case;
+      const length = reader.uint32();
+      return ControlMessage.decode(reader, length).command?.$case;
     });
     expect(commands).toEqual(["startup", "close"]);
   });
