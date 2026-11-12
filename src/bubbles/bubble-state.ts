@@ -3,4 +3,5 @@ export enum BubbleState {
   Starting,
   Running,
   Stopping,
+  Exited,
 }

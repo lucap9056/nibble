@@ -1,303 +1,213 @@
-import { rm } from "node:fs/promises";
 import path from "node:path";
 import config from "@/config";
 import { toRelativePosixPath } from "@/utils/path";
-import { PendingRequests } from "@/utils/pending-requests";
-import { BubbleAbortController } from "./abort-controller";
-import { ExitEvent, StateChangeEvent } from "./bubble-events";
-import {
-  type BubbleControlMessage,
-  BubbleControlType,
-  BubbleResultType,
-  newCloseMessage,
-  newStartupMessage,
-  type ResultMessage,
-} from "./bubble-messages";
 import { BubbleState } from "./bubble-state";
+import { BubbleWorker } from "./bubble-worker";
+import { BubbleSocketLink } from "./socket-link";
 
-const CLOSE_TIMEOUT_MS = 10000;
-
-interface BubbleWorkerHandlers {
-  onStateChange: (state: BubbleState) => void;
-  onExit: (error?: Error) => void;
+export interface BubbleHandlers {
+  onStateChange: (
+    worker: { id: string; socketPath: string },
+    state: BubbleState,
+  ) => void | Promise<void>;
 }
 
-class BubbleWorker extends Worker {
-  private static unlinkSocket(socketPath: string) {
-    if (socketPath === "") {
-      return Promise.resolve();
-    }
-
-    return Promise.all([
-      rm(socketPath, { force: true }),
-      rm(`${socketPath}.temp`, { force: true }),
-    ])
-      .then(() => {})
-      .catch((err) => {
-        console.error(err);
-      });
-  }
-
-  private readonly messages: PendingRequests<void>;
-  private readonly ctr: BubbleAbortController;
-  private readonly onStateChange: (state: BubbleState) => void;
-  private currentState: BubbleState = BubbleState.Idle;
-  private socketPath = "";
-  public readonly exited: Promise<void>;
-
-  constructor({ onStateChange, onExit }: BubbleWorkerHandlers) {
-    super(new URL("./bubble.worker.ts", import.meta.url));
-    const messages = new PendingRequests<void>();
-    const ctr = new BubbleAbortController();
-    const exit = Promise.withResolvers<void>();
-    exit.promise.catch(() => {});
-
-    ctr.signal.addEventListener("abort", () => {
-      this.terminate();
-
-      BubbleWorker.unlinkSocket(this.socketPath).finally(() => {
-        const error = BubbleAbortController.getAbortReason(ctr.signal);
-
-        messages.rejectAll(
-          error ?? new Error("Bubble worker exited before responding"),
-        );
-
-        this.setState(BubbleState.Idle);
-        if (error) {
-          exit.reject(error);
-        } else {
-          exit.resolve();
-        }
-        onExit(error);
-      });
-    });
-
-    this.addEventListener("message", (e: MessageEvent<ResultMessage>) => {
-      switch (e.data.type) {
-        case BubbleResultType.Success:
-          messages.resolve(e.data.id);
-          return;
-        case BubbleResultType.Error: {
-          const { name, message, stack } = e.data.error;
-          const err = new Error(message);
-          err.name = name;
-          err.stack = stack;
-          messages.reject(e.data.id, err);
-          return;
-        }
-      }
-    });
-
-    this.addEventListener("error", (e) => {
-      ctr.abort(
-        e.error ?? new Error(`Bubble worker error: ${e.message || "unknown"}`),
-      );
-    });
-
-    this.addEventListener("messageerror", () => {
-      messages.rejectAll(
-        new Error("Failed to deserialize message from bubble worker"),
-      );
-      if (this.currentState !== BubbleState.Running) {
-        ctr.abort(
-          new Error(
-            "Failed to deserialize message from bubble worker before it was running",
-          ),
-        );
-      }
-    });
-
-    this.onStateChange = onStateChange;
-    this.messages = messages;
-    this.ctr = ctr;
-    this.exited = exit.promise;
-  }
-
-  public send(msg: BubbleControlMessage): Promise<void> {
-    const promise = this.messages.register(msg.id);
-    this.postMessage(msg);
-
-    switch (msg.type) {
-      case BubbleControlType.Startup: {
-        this.socketPath = msg.bubbleSocketPath;
-        break;
-      }
-      case BubbleControlType.Close: {
-        const timeout = setTimeout(() => {
-          this.messages.reject(
-            msg.id,
-            new Error(
-              `Bubble worker did not respond to close in ${CLOSE_TIMEOUT_MS}ms`,
-            ),
-          );
-        }, CLOSE_TIMEOUT_MS);
-
-        promise
-          .finally(() => {
-            clearTimeout(timeout);
-          })
-          .catch(() => {});
-        break;
-      }
-    }
-
-    return promise;
-  }
-
-  public get state(): BubbleState {
-    return this.currentState;
-  }
-
-  public setState(state: BubbleState) {
-    if (this.currentState === state) return;
-    this.currentState = state;
-    this.onStateChange(state);
-  }
-
-  public get signal() {
-    return this.ctr.signal;
-  }
-
-  public abort(error?: Error) {
-    this.ctr.abort(error);
-  }
-}
-
-class BubbleStatus {
-  constructor(
-    public readonly promise: Promise<void>,
-    public readonly worker?: BubbleWorker,
-  ) {}
-
-  public get state() {
-    return this.worker?.state ?? BubbleState.Idle;
-  }
-}
-
-const IDLE_STATUS: BubbleStatus = new BubbleStatus(Promise.resolve());
-
-export class Bubble extends EventTarget {
+export class Bubble {
   private static SOURCE_EXTENSION = /\.[cm]?[jt]sx?$/;
-
+  private readonly eventHandlers: BubbleHandlers;
   private readonly sourcePath: string;
-  private readonly socketPath: string;
-  private status: BubbleStatus = IDLE_STATUS;
+  private readonly socketDir: string;
+  private readonly link: BubbleSocketLink;
+  private readonly workers = new Set<BubbleWorker>();
+  private currentWorker?: BubbleWorker;
 
-  constructor(sourcePath: string) {
-    super();
+  constructor(sourcePath: string, eventHandlers: BubbleHandlers) {
+    this.eventHandlers = eventHandlers;
+
     const relativeSourcePath = toRelativePosixPath(
       config.bubbleSourceDir,
       sourcePath,
     );
     const socketName = relativeSourcePath.replace(Bubble.SOURCE_EXTENSION, "");
+    const socketPath = `${path.join(config.bubbleSocketDir, socketName)}.sock`;
     this.sourcePath = path.join(config.bubbleSourceDir, relativeSourcePath);
-    this.socketPath = `${path.join(config.bubbleSocketDir, socketName)}.sock`;
+    this.socketDir = path.dirname(socketPath);
+    this.link = new BubbleSocketLink(socketPath);
   }
 
-  private waitForExit(worker: BubbleWorker, error?: Error): Promise<void> {
-    worker.abort(error);
-    return worker.exited;
-  }
+  private onWorkerStateChange(worker: BubbleWorker, state: BubbleState) {
+    const current = this.currentWorker;
 
-  private updateStatus(promise: Promise<void>, worker?: BubbleWorker) {
-    this.status = new BubbleStatus(promise, worker);
-  }
+    const isActive = (candidate: BubbleWorker) =>
+      candidate.state === BubbleState.Starting ||
+      candidate.state === BubbleState.Running;
 
-  private spawnWorker(): BubbleWorker {
-    const worker = new BubbleWorker({
-      onStateChange: (state) => {
-        if (this.status.worker === worker) {
-          this.dispatchEvent(new StateChangeEvent(state));
+    const isOutdated = (candidate: BubbleWorker, than: BubbleWorker) =>
+      candidate.createdAt < than.createdAt;
+
+    const pickLatest = (filter: (candidate: BubbleWorker) => boolean) => {
+      let latest: BubbleWorker | undefined;
+      for (const candidate of this.workers) {
+        if (candidate === worker || !filter(candidate)) {
+          continue;
         }
-      },
-      onExit: (error) => {
-        if (this.status.worker === worker) {
-          this.status = IDLE_STATUS;
+        if (!latest || !isOutdated(candidate, latest)) {
+          latest = candidate;
         }
-        this.dispatchEvent(new ExitEvent(error));
-      },
-    });
-
-    worker.addEventListener("close", () => {
-      if (!worker.signal.aborted) {
-        const promise = this.waitForExit(
-          worker,
-          new Error(`Bubble worker exited unexpectedly: ${this.sourcePath}`),
-        );
-        this.updateStatus(promise, worker);
-        worker.setState(BubbleState.Stopping);
       }
+      return latest;
+    };
+
+    switch (state) {
+      case BubbleState.Starting: {
+        if (current && isActive(current)) {
+          if (isOutdated(worker, current)) {
+            worker.stop(true);
+          } else {
+            if (current.state === BubbleState.Starting) {
+              this.currentWorker = worker;
+            }
+          }
+          return;
+        }
+
+        this.currentWorker = worker;
+        this.emit(worker, BubbleState.Starting);
+        return;
+      }
+      case BubbleState.Running: {
+        if (worker === current) {
+          this.emit(worker, BubbleState.Running);
+          return;
+        }
+
+        if (current && isActive(current) && isOutdated(worker, current)) {
+          worker.stop(false);
+          return;
+        }
+
+        this.currentWorker = worker;
+        if (current && isActive(current)) {
+          this.syncLink().finally(() => {
+            current.stop(false);
+          });
+        }
+
+        this.emit(worker, BubbleState.Running);
+        return;
+      }
+      case BubbleState.Stopping: {
+        if (!current) {
+          this.currentWorker = worker;
+          this.emit(worker, BubbleState.Stopping);
+          return;
+        }
+
+        if (worker !== current) {
+          return;
+        }
+
+        const successor = pickLatest(isActive);
+        if (successor) {
+          this.currentWorker = successor;
+          this.emit(successor, successor.state);
+        } else {
+          this.emit(worker, BubbleState.Stopping);
+        }
+
+        return;
+      }
+      case BubbleState.Exited: {
+        this.workers.delete(worker);
+        if (current && worker !== current) return;
+
+        const successor = pickLatest(isActive) ?? pickLatest(() => true);
+        this.currentWorker = successor;
+        if (!successor) {
+          this.emit(worker, BubbleState.Idle);
+        } else {
+          if (isActive(successor) || !current) {
+            this.emit(successor, successor.state);
+          }
+        }
+        return;
+      }
+    }
+  }
+
+  private emit(worker: BubbleWorker, state: BubbleState) {
+    const { id, socketPath } =
+      state === BubbleState.Idle ? { id: "", socketPath: "" } : worker;
+    try {
+      this.eventHandlers.onStateChange({ id, socketPath }, state);
+    } catch {}
+  }
+
+  private syncLink(): Promise<void> {
+    const current = this.currentWorker;
+    const target =
+      current?.state === BubbleState.Running ? current.socketPath : undefined;
+
+    return this.link.point(target).catch((err) => {
+      console.error(err);
+    });
+  }
+
+  private spawnWorker(createdAt: number): BubbleWorker {
+    const worker = new BubbleWorker(createdAt, {
+      onStateChange: (state) => {
+        this.onWorkerStateChange(worker, state);
+        this.syncLink();
+      },
     });
 
     return worker;
   }
 
-  public get state() {
-    return this.status.state;
-  }
+  public start(createdAt: number): Promise<void> {
+    const oldWorker = this.currentWorker;
+    const worker = this.spawnWorker(createdAt);
+    const socketPath = path.join(this.socketDir, worker.id);
+    this.workers.add(worker);
 
-  public start(): Promise<void> {
-    const currentStatus = this.status;
-    switch (currentStatus.state) {
-      case BubbleState.Idle:
-        break;
-      case BubbleState.Starting:
-      case BubbleState.Running:
-        return currentStatus.promise;
-      case BubbleState.Stopping:
-        return Promise.reject(
-          new Error(
-            `Cannot start bubble in ${BubbleState[currentStatus.state]} state: ${this.sourcePath}`,
-          ),
-        );
+    const started = worker.start(this.sourcePath, socketPath);
+
+    const isReplaced = oldWorker !== this.currentWorker;
+    if (isReplaced && oldWorker?.state === BubbleState.Starting) {
+      oldWorker.stop(true);
     }
 
-    const worker = this.spawnWorker();
-
-    const promise = worker
-      .send(newStartupMessage(this.sourcePath, this.socketPath))
-      .then(() => {
-        if (worker.state === BubbleState.Starting) {
-          worker.setState(BubbleState.Running);
-        }
-      })
-      .catch((err: Error) => {
-        worker.abort(err);
-        throw err;
-      });
-
-    this.updateStatus(promise, worker);
-    worker.setState(BubbleState.Starting);
-    return promise;
+    return started;
   }
 
   public stop(force: boolean): Promise<void> {
-    const { promise: currentPromise, worker } = this.status;
-    if (worker === undefined) {
-      return Promise.resolve();
+    if (this.workers.size === 0) {
+      return this.link.release();
     }
+    const stopped = Promise.resolve().then(async () => {
+      const stops = this.workers
+        .values()
+        .toArray()
+        .map((worker) => worker.stop(force));
 
-    switch (worker.state) {
-      case BubbleState.Starting: {
-        const promise = this.waitForExit(worker);
-        this.updateStatus(promise, worker);
-        worker.setState(BubbleState.Stopping);
-        return promise;
+      const errs = await Promise.allSettled([
+        ...stops,
+        this.link.release(),
+      ]).then((results) => {
+        return results
+          .filter(
+            (result): result is PromiseRejectedResult =>
+              result.status === "rejected",
+          )
+          .map((result) => result.reason as Error);
+      });
+
+      if (errs.length > 0) {
+        throw new AggregateError(errs);
       }
-      case BubbleState.Running:
-        break;
-      case BubbleState.Idle:
-      case BubbleState.Stopping:
-        return currentPromise;
-    }
+    });
 
-    const promise = worker
-      .send(newCloseMessage(force))
-      .then(() => this.waitForExit(worker))
-      .catch((err: Error) => this.waitForExit(worker, err));
-
-    this.updateStatus(promise, worker);
-    worker.setState(BubbleState.Stopping);
-    return promise;
+    this.currentWorker = undefined;
+    return stopped;
   }
 }
