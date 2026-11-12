@@ -111,7 +111,7 @@ export class BubbleWorker extends Worker {
     this.addEventListener("close", () => {
       if (!ctr.signal.aborted) {
         this.setState(BubbleState.Stopping);
-        ctr.abort(new Error(""));
+        ctr.abort(new Error("Bubble worker closed unexpectedly"));
       }
     });
 
@@ -169,7 +169,7 @@ export class BubbleWorker extends Worker {
 
   public start(sourcePath: string, socketPath: string): Promise<void> {
     if (this.currentState !== BubbleState.Idle) {
-      return Promise.reject(new Error(""));
+      return Promise.reject(new Error("Bubble worker has already started"));
     }
     const message = newStartupMessage(sourcePath, socketPath);
     const started = this.send(message)
@@ -209,8 +209,12 @@ export class BubbleWorker extends Worker {
       case BubbleState.Exited: {
         return this.exited;
       }
-      default:
-        return Promise.reject(new Error(""));
+      default: {
+        const error = new Error(
+          `Unknown bubble worker state: ${this.currentState}`,
+        );
+        return Promise.reject(error);
+      }
     }
   }
 }
