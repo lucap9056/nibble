@@ -163,6 +163,10 @@ export class Bubble {
     return worker;
   }
 
+  public get state() {
+    return this.currentWorker?.state ?? BubbleState.Idle;
+  }
+
   public start(createdAt: number): Promise<void> {
     const oldWorker = this.currentWorker;
     const worker = this.spawnWorker(createdAt);
