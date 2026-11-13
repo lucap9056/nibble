@@ -5,6 +5,7 @@ export interface Config {
   bubbleSocketDir: string;
   databasePath: string;
   routerBinaryPath: string;
+  routerListen: string;
 }
 
 export const ROUTER_BINARY_NAME =
@@ -31,6 +32,7 @@ const config: Config = {
   routerBinaryPath: path.resolve(
     Bun.env.ROUTER_BINARY ?? defaultRouterBinaryPath,
   ),
+  routerListen: Bun.env.ROUTER_LISTEN ?? "127.0.0.1:8080",
 };
 
 export default config;
