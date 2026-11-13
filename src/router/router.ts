@@ -13,6 +13,7 @@ export type RouterUnixListenAddress = `unix://${string}`;
 type RouterCommand = NonNullable<ControlMessage["command"]>;
 
 enum RouterProcessState {
+  Idle,
   Running,
   Stopping,
   Exited,
@@ -30,7 +31,8 @@ export class RouterProcess {
   private readonly child: Bun.Subprocess<"pipe", "pipe", "inherit">;
   private readonly pending = new PendingRequests<Success>();
   private readonly exit = Promise.withResolvers<void>();
-  private state = RouterProcessState.Running;
+  private state = RouterProcessState.Idle;
+  private pendingRoutes?: RouteEntry[];
 
   constructor(binaryPath: string) {
     this.child = Bun.spawn([binaryPath], {
@@ -119,8 +121,12 @@ export class RouterProcess {
   public start(listen: string, routes?: RouteEntry[]): Promise<number>;
   public async start(
     listen: string,
-    routes: RouteEntry[] = [],
+    routes: RouteEntry[] = this.pendingRoutes ?? [],
   ): Promise<number | undefined> {
+    if (this.state === RouterProcessState.Idle) {
+      this.state = RouterProcessState.Running;
+    }
+    this.pendingRoutes = undefined;
     try {
       const { port } = await this.send({
         $case: "startup",
@@ -134,11 +140,18 @@ export class RouterProcess {
   }
 
   public async setRoutes(routes: RouteEntry[]): Promise<void> {
+    if (this.state === RouterProcessState.Idle) {
+      this.pendingRoutes = routes;
+      return;
+    }
     await this.send({ $case: "setRoutes", value: { routes } });
   }
 
   public async stop(force = false): Promise<void> {
-    if (this.state !== RouterProcessState.Running) {
+    if (
+      this.state === RouterProcessState.Stopping ||
+      this.state === RouterProcessState.Exited
+    ) {
       return this.exited.catch(() => {});
     }
     this.state = RouterProcessState.Stopping;

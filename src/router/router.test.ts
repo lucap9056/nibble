@@ -174,7 +174,8 @@ describe("RouterProcess proxy", () => {
     ];
 
     router = new RouterProcess(routerBinaryPath);
-    port = await router.start(LISTEN, defaultRoutes);
+    await router.setRoutes(defaultRoutes);
+    port = await router.start(LISTEN);
     baseUrl = `http://${HOST}:${port}`;
     wsBaseUrl = `ws://${HOST}:${port}`;
   });
@@ -305,7 +306,9 @@ describe("RouterProcess proxy", () => {
     test("swaps the route table", async () => {
       const alphaUrl = `${baseUrl}/alpha`;
       const missingUrl = `${baseUrl}/missing`;
-      const swappedRoutes = [{ routePath: "/alpha", socketPath: beta.socketPath }];
+      const swappedRoutes = [
+        { routePath: "/alpha", socketPath: beta.socketPath },
+      ];
 
       await router.setRoutes(swappedRoutes);
       const swapped = await fetch(alphaUrl);
@@ -337,6 +340,12 @@ describe("RouterProcess lifecycle", () => {
     expect(startError).toBeInstanceOf(Error);
     await expect(router.exited).rejects.toBe(startError as Error);
     occupied.stop(true);
+  });
+
+  test("stop before start resolves exited", async () => {
+    const router = new RouterProcess(routerBinaryPath);
+    await router.stop();
+    await expect(router.exited).resolves.toBeUndefined();
   });
 
   test("graceful stop releases the port and resolves exited", async () => {
