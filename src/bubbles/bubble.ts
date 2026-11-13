@@ -1,6 +1,6 @@
 import path from "node:path";
 import config from "@/config";
-import { toRelativePosixPath } from "@/utils/path";
+import { SOURCE_EXTENSION, toRelativePosixPath } from "@/utils/path";
 import { BubbleState } from "./bubble-state";
 import { BubbleWorker } from "./bubble-worker";
 import { BubbleSocketLink } from "./socket-link";
@@ -13,7 +13,6 @@ export interface BubbleHandlers {
 }
 
 export class Bubble {
-  private static SOURCE_EXTENSION = /\.[cm]?[jt]sx?$/;
   private readonly eventHandlers: BubbleHandlers;
   private readonly sourcePath: string;
   private readonly socketDir: string;
@@ -28,7 +27,7 @@ export class Bubble {
       config.bubbleSourceDir,
       sourcePath,
     );
-    const socketName = relativeSourcePath.replace(Bubble.SOURCE_EXTENSION, "");
+    const socketName = relativeSourcePath.replace(SOURCE_EXTENSION, "");
     const socketPath = `${path.join(config.bubbleSocketDir, socketName)}.sock`;
     this.sourcePath = path.join(config.bubbleSourceDir, relativeSourcePath);
     this.socketDir = path.dirname(socketPath);

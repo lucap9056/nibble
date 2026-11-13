@@ -21,3 +21,11 @@ export const toRelativePosixPath = (
 
   return relativePath.split(path.sep).join(path.posix.sep);
 };
+
+export const SOURCE_EXTENSION = /\.[cm]?[jt]sx?$/;
+
+export const toRoutePath = (baseDir: string, sourcePath: string): string => {
+  const relativeSourcePath = toRelativePosixPath(baseDir, sourcePath);
+  const routeName = relativeSourcePath.replace(SOURCE_EXTENSION, "");
+  return `/${routeName}/`;
+};
