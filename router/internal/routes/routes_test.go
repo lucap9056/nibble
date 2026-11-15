@@ -12,14 +12,15 @@ func TestNewTable_RejectsInvalidEntries(t *testing.T) {
 	invalidEntries := [][]routes.Entry{
 		{{RoutePath: "", SocketPath: "x"}},
 		{{RoutePath: "/", SocketPath: "x"}},
-		{{RoutePath: "api", SocketPath: "x"}},
-		{{RoutePath: "/api/", SocketPath: "x"}},
-		{{RoutePath: "/a//b", SocketPath: "x"}},
-		{{RoutePath: "/a/./b", SocketPath: "x"}},
-		{{RoutePath: "/a/../b", SocketPath: "x"}},
-		{{RoutePath: "/a b", SocketPath: "x"}},
-		{{RoutePath: "/a", SocketPath: ""}},
-		{{RoutePath: "/a", SocketPath: "x"}, {RoutePath: "/a", SocketPath: "y"}},
+		{{RoutePath: "//", SocketPath: "x"}},
+		{{RoutePath: "api/", SocketPath: "x"}},
+		{{RoutePath: "/api", SocketPath: "x"}},
+		{{RoutePath: "/a//b/", SocketPath: "x"}},
+		{{RoutePath: "/a/./b/", SocketPath: "x"}},
+		{{RoutePath: "/a/../b/", SocketPath: "x"}},
+		{{RoutePath: "/a b/", SocketPath: "x"}},
+		{{RoutePath: "/a/", SocketPath: ""}},
+		{{RoutePath: "/a/", SocketPath: "x"}, {RoutePath: "/a/", SocketPath: "y"}},
 	}
 	for _, entries := range invalidEntries {
 		_, err := routes.NewTable(entries)
@@ -28,8 +29,8 @@ func TestNewTable_RejectsInvalidEntries(t *testing.T) {
 }
 
 func TestResolve(t *testing.T) {
-	api := routes.Entry{RoutePath: "/api", SocketPath: "api.sock"}
-	user := routes.Entry{RoutePath: "/api/user", SocketPath: "user.sock"}
+	api := routes.Entry{RoutePath: "/api/", SocketPath: "api.sock"}
+	user := routes.Entry{RoutePath: "/api/user/", SocketPath: "user.sock"}
 	entries := []routes.Entry{api, user}
 	table, err := routes.NewTable(entries)
 	require.NoError(t, err)

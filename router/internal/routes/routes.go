@@ -22,10 +22,10 @@ type Resolved struct {
 }
 
 func isValidRoutePath(path string) bool {
-	if !strings.HasPrefix(path, "/") {
+	if !strings.HasPrefix(path, "/") || !strings.HasSuffix(path, "/") || path == "/" {
 		return false
 	}
-	for _, segment := range strings.Split(path[1:], "/") {
+	for _, segment := range strings.Split(path[1:len(path)-1], "/") {
 		if segment == "." || segment == ".." || !segmentPattern.MatchString(segment) {
 			return false
 		}
@@ -42,10 +42,11 @@ func NewTable(entries []Entry) (Table, error) {
 		if entry.SocketPath == "" {
 			return nil, fmt.Errorf("Route %s must have a socketPath", entry.RoutePath)
 		}
-		if _, exists := table[entry.RoutePath]; exists {
+		prefix := strings.TrimSuffix(entry.RoutePath, "/")
+		if _, exists := table[prefix]; exists {
 			return nil, fmt.Errorf("Duplicate route path: %s", entry.RoutePath)
 		}
-		table[entry.RoutePath] = entry
+		table[prefix] = entry
 	}
 	return table, nil
 }
