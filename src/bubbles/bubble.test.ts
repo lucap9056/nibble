@@ -134,6 +134,7 @@ const setup = () => {
   const events: { id: string; socketPath: string; state: BubbleState }[] = [];
   let checked = 0;
   const sourcePath = path.join(config.bubbleSourceDir, "test.ts");
+  const snapshotPath = path.join(config.bubbleSnapshotDir, "test.js");
   const bubble = new Bubble(
     sourcePath,
     {
@@ -146,7 +147,7 @@ const setup = () => {
   activeBubble = bubble;
 
   const start = (createdAt: number) => {
-    const started = bubble.start(createdAt);
+    const started = bubble.start(snapshotPath, createdAt);
     const worker = FakeWorker.instances.at(-1) as SpawnedWorker;
     return { started, worker };
   };

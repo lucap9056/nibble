@@ -168,9 +168,9 @@ describe("RouterProcess proxy", () => {
     alpha = startFakeBubble(alphaSocketPath, "alpha");
     beta = startFakeBubble(betaSocketPath, "beta");
     defaultRoutes = [
-      { routePath: "/alpha", socketPath: alphaSocketPath },
-      { routePath: "/alpha/nested", socketPath: betaSocketPath },
-      { routePath: "/missing", socketPath: missingSocketPath },
+      { routePath: "/alpha/", socketPath: alphaSocketPath },
+      { routePath: "/alpha/nested/", socketPath: betaSocketPath },
+      { routePath: "/missing/", socketPath: missingSocketPath },
     ];
 
     router = new RouterProcess(routerBinaryPath);
@@ -307,7 +307,7 @@ describe("RouterProcess proxy", () => {
       const alphaUrl = `${baseUrl}/alpha`;
       const missingUrl = `${baseUrl}/missing`;
       const swappedRoutes = [
-        { routePath: "/alpha", socketPath: beta.socketPath },
+        { routePath: "/alpha/", socketPath: beta.socketPath },
       ];
 
       await router.setRoutes(swappedRoutes);
@@ -362,7 +362,7 @@ describe("RouterProcess lifecycle", () => {
     const socketDir = await mkdtemp(SOCKET_DIR_PREFIX);
     const socketPath = path.join(socketDir, "b.sock");
     const bubble = startFakeBubble(socketPath, "b");
-    const routes = [{ routePath: "/b", socketPath }];
+    const routes = [{ routePath: "/b/", socketPath }];
     const router = new RouterProcess(routerBinaryPath);
     const port = await router.start(LISTEN, routes);
 
