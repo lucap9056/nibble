@@ -1,5 +1,6 @@
 import path from "node:path";
 import config from "@/config";
+import type { Logger } from "@/utils/logger";
 import { SOURCE_EXTENSION, toRelativePosixPath } from "@/utils/path";
 import { BubbleState } from "./bubble-state";
 import { BubbleWorker } from "./bubble-worker";
@@ -14,22 +15,26 @@ export interface BubbleHandlers {
 
 export class Bubble {
   private readonly eventHandlers: BubbleHandlers;
-  private readonly sourcePath: string;
+  private readonly logger: Logger;
   private readonly socketDir: string;
   private readonly link: BubbleSocketLink;
   private readonly workers = new Set<BubbleWorker>();
   private currentWorker?: BubbleWorker;
 
-  constructor(sourcePath: string, eventHandlers: BubbleHandlers) {
+  constructor(
+    sourcePath: string,
+    eventHandlers: BubbleHandlers,
+    logger: Logger,
+  ) {
     this.eventHandlers = eventHandlers;
 
     const relativeSourcePath = toRelativePosixPath(
       config.bubbleSourceDir,
       sourcePath,
     );
+    this.logger = logger.with({ bubble: relativeSourcePath });
     const socketName = relativeSourcePath.replace(SOURCE_EXTENSION, "");
     const socketPath = `${path.join(config.bubbleSocketDir, socketName)}.sock`;
-    this.sourcePath = path.join(config.bubbleSourceDir, relativeSourcePath);
     this.socketDir = path.dirname(socketPath);
     this.link = new BubbleSocketLink(socketPath);
   }
@@ -137,6 +142,10 @@ export class Bubble {
   private emit(worker: BubbleWorker, state: BubbleState) {
     const { id, socketPath } =
       state === BubbleState.Idle ? { id: "", socketPath: "" } : worker;
+    this.logger.info("bubble state changed", {
+      worker: id,
+      state: BubbleState[state],
+    });
     try {
       this.eventHandlers.onStateChange({ id, socketPath }, state);
     } catch {}
@@ -148,17 +157,21 @@ export class Bubble {
       current?.state === BubbleState.Running ? current.socketPath : undefined;
 
     return this.link.point(target).catch((err) => {
-      console.error(err);
+      this.logger.error("socket link failed", { target, err });
     });
   }
 
   private spawnWorker(createdAt: number): BubbleWorker {
-    const worker = new BubbleWorker(createdAt, {
-      onStateChange: (state) => {
-        this.onWorkerStateChange(worker, state);
-        this.syncLink();
+    const worker = new BubbleWorker(
+      createdAt,
+      {
+        onStateChange: (state) => {
+          this.onWorkerStateChange(worker, state);
+          this.syncLink();
+        },
       },
-    });
+      this.logger,
+    );
 
     return worker;
   }
@@ -167,13 +180,13 @@ export class Bubble {
     return this.currentWorker?.state ?? BubbleState.Idle;
   }
 
-  public start(createdAt: number): Promise<void> {
+  public start(snapshotPath: string, createdAt: number): Promise<void> {
     const oldWorker = this.currentWorker;
     const worker = this.spawnWorker(createdAt);
     const socketPath = path.join(this.socketDir, worker.id);
     this.workers.add(worker);
 
-    const started = worker.start(this.sourcePath, socketPath);
+    const started = worker.start(snapshotPath, socketPath);
 
     const isReplaced = oldWorker !== this.currentWorker;
     if (isReplaced && oldWorker?.state === BubbleState.Starting) {

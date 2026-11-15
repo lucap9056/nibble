@@ -3,7 +3,7 @@ import path from "node:path";
 export interface Config {
   bubbleSourceDir: string;
   bubbleSocketDir: string;
-  databasePath: string;
+  bubbleSnapshotDir: string;
   routerBinaryPath: string;
   routerListen: string;
 }
@@ -26,8 +26,8 @@ const config: Config = {
   bubbleSocketDir: path.resolve(
     Bun.env.BUBBLE_SOCKET_DIR ?? path.join(rootPath, "sockets"),
   ),
-  databasePath: path.resolve(
-    Bun.env.DATABASE ?? path.join(rootPath, "bubbles.db"),
+  bubbleSnapshotDir: path.resolve(
+    Bun.env.BUBBLE_SNAPSHOT_DIR ?? path.join(rootPath, "snapshots"),
   ),
   routerBinaryPath: path.resolve(
     Bun.env.ROUTER_BINARY ?? defaultRouterBinaryPath,

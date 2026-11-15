@@ -1,13 +1,14 @@
 import { rm } from "node:fs/promises";
+import type { Logger } from "@/utils/logger";
 import { PendingRequests } from "@/utils/pending-requests";
 import { BubbleAbortController } from "./abort-controller";
 import {
   type BubbleControlMessage,
   BubbleControlType,
   BubbleResultType,
+  isResultMessage,
   newCloseMessage,
   newStartupMessage,
-  type ResultMessage,
 } from "./bubble-messages";
 import { BubbleState } from "./bubble-state";
 
@@ -24,7 +25,7 @@ export class BubbleWorker extends Worker {
     );
   }
 
-  private static unlinkSocket(socketPath: string) {
+  private static unlinkSocket(socketPath: string, logger: Logger) {
     if (socketPath === "") {
       return Promise.resolve();
     }
@@ -32,21 +33,27 @@ export class BubbleWorker extends Worker {
     return rm(socketPath, { force: true })
       .then(() => {})
       .catch((err) => {
-        console.error(err);
+        logger.error("socket unlink failed", { socketPath, err });
       });
   }
 
   public readonly id = BubbleWorker.generateId();
   public readonly createdAt: number;
   private readonly eventHandlers: BubbleWorkerHandlers;
+  private readonly logger: Logger;
   private readonly messages: PendingRequests<void>;
   private readonly ctr: BubbleAbortController;
   private currentState = BubbleState.Idle;
   private boundSocketPath = "";
   public readonly exited: Promise<void>;
 
-  constructor(createdAt: number, eventHandlers: BubbleWorkerHandlers) {
+  constructor(
+    createdAt: number,
+    eventHandlers: BubbleWorkerHandlers,
+    logger: Logger,
+  ) {
     super(new URL("./bubble.worker.ts", import.meta.url));
+    const workerLogger = logger.with({ worker: this.id });
     const messages = new PendingRequests<void>();
     const ctr = new BubbleAbortController();
     const exit = Promise.withResolvers<void>();
@@ -56,34 +63,40 @@ export class BubbleWorker extends Worker {
       this.setState(BubbleState.Stopping);
       this.terminate();
 
-      BubbleWorker.unlinkSocket(this.boundSocketPath).finally(() => {
-        const error = BubbleAbortController.getAbortReason(ctr.signal);
+      BubbleWorker.unlinkSocket(this.boundSocketPath, workerLogger).finally(
+        () => {
+          const error = BubbleAbortController.getAbortReason(ctr.signal);
 
-        messages.rejectAll(
-          error ?? new Error("Bubble worker exited before responding"),
-        );
+          messages.rejectAll(
+            error ?? new Error("Bubble worker exited before responding"),
+          );
 
-        this.setState(BubbleState.Exited);
+          this.setState(BubbleState.Exited);
 
-        if (error) {
-          exit.reject(error);
-        } else {
-          exit.resolve();
-        }
-      });
+          if (error) {
+            exit.reject(error);
+          } else {
+            exit.resolve();
+          }
+        },
+      );
     });
 
-    this.addEventListener("message", (e: MessageEvent<ResultMessage>) => {
-      switch (e.data.type) {
+    this.addEventListener("message", (e: MessageEvent<unknown>) => {
+      const msg = e.data;
+      if (!isResultMessage(msg)) {
+        return;
+      }
+      switch (msg.type) {
         case BubbleResultType.Success:
-          messages.resolve(e.data.id);
+          messages.resolve(msg.id);
           return;
         case BubbleResultType.Error: {
-          const { name, message, stack } = e.data.error;
+          const { name, message, stack } = msg.error;
           const err = new Error(message);
           err.name = name;
           err.stack = stack;
-          messages.reject(e.data.id, err);
+          messages.reject(msg.id, err);
           return;
         }
       }
@@ -117,6 +130,7 @@ export class BubbleWorker extends Worker {
 
     this.createdAt = createdAt;
     this.eventHandlers = eventHandlers;
+    this.logger = workerLogger;
     this.messages = messages;
     this.ctr = ctr;
     this.exited = exit.promise;
@@ -171,7 +185,11 @@ export class BubbleWorker extends Worker {
     if (this.currentState !== BubbleState.Idle) {
       return Promise.reject(new Error("Bubble worker has already started"));
     }
-    const message = newStartupMessage(sourcePath, socketPath);
+    const message = newStartupMessage(
+      sourcePath,
+      socketPath,
+      this.logger.fields,
+    );
     const started = this.send(message)
       .then(() => {
         this.setState(BubbleState.Running);

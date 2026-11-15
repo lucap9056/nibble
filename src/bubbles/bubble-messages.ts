@@ -1,3 +1,5 @@
+import type { LogFields } from "@/utils/logger";
+
 export enum BubbleControlType {
   Startup,
   Close,
@@ -9,19 +11,22 @@ interface BaseMessage {
 
 export type StartupMessage = BaseMessage & {
   type: BubbleControlType.Startup;
-  bubbleSourcePath: string;
+  bubbleSnapshotPath: string;
   bubbleSocketPath: string;
+  logFields: LogFields;
 };
 
 export function newStartupMessage(
-  bubbleSourcePath: string,
+  bubbleSnapshotPath: string,
   bubbleSocketPath: string,
+  logFields: LogFields,
 ): StartupMessage {
   return {
     id: Bun.randomUUIDv7(),
     type: BubbleControlType.Startup,
-    bubbleSourcePath,
+    bubbleSnapshotPath,
     bubbleSocketPath,
+    logFields,
   };
 }
 
@@ -66,3 +71,27 @@ export function newErrorMessage(id: string, err: Error): ErrorMessage {
 }
 
 export type ResultMessage = SuccessMessage | ErrorMessage;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+export function isResultMessage(value: unknown): value is ResultMessage {
+  if (!isRecord(value) || typeof value.id !== "string") {
+    return false;
+  }
+  switch (value.type) {
+    case BubbleResultType.Success:
+      return true;
+    case BubbleResultType.Error: {
+      const { error } = value;
+      return (
+        isRecord(error) &&
+        typeof error.name === "string" &&
+        typeof error.message === "string" &&
+        (error.stack === undefined || typeof error.stack === "string")
+      );
+    }
+    default:
+      return false;
+  }
+}

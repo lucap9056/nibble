@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import config from "@/config";
+import type { Logger } from "@/utils/logger";
 import type { Bubble as BubbleType } from "./bubble";
 import {
   type BubbleControlMessage,
@@ -102,6 +103,15 @@ const OriginalWorker = globalThis.Worker;
 globalThis.Worker = FakeWorker as unknown as typeof Worker;
 const { Bubble } = await import("./bubble");
 
+const silentLogger: Logger = {
+  fields: {},
+  debug: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+  with: () => silentLogger,
+};
+
 let activeBubble: BubbleType | undefined;
 
 beforeAll(async () => {
@@ -124,11 +134,15 @@ const setup = () => {
   const events: { id: string; socketPath: string; state: BubbleState }[] = [];
   let checked = 0;
   const sourcePath = path.join(config.bubbleSourceDir, "test.ts");
-  const bubble = new Bubble(sourcePath, {
-    onStateChange: ({ id, socketPath }, state) => {
-      events.push({ id, socketPath, state });
+  const bubble = new Bubble(
+    sourcePath,
+    {
+      onStateChange: ({ id, socketPath }, state) => {
+        events.push({ id, socketPath, state });
+      },
     },
-  });
+    silentLogger,
+  );
   activeBubble = bubble;
 
   const start = (createdAt: number) => {
