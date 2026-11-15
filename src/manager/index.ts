@@ -42,6 +42,7 @@ export class BubbleManager {
   private readonly routableBubbles = new Set<string>();
   private routing?: Promise<void>;
   private routesDirty = false;
+  private closed = false;
 
   constructor(eventHandlers: BubbleManagerHandlers, logger: Logger) {
     this.eventHandlers = eventHandlers;
@@ -49,6 +50,9 @@ export class BubbleManager {
   }
 
   private flushRoutes() {
+    if (this.closed) {
+      return;
+    }
     if (this.routing) {
       this.routesDirty = true;
       return;
@@ -78,6 +82,9 @@ export class BubbleManager {
   }
 
   public sync(record: BubbleRecord): Promise<void> {
+    if (this.closed) {
+      return Promise.reject(new Error("BubbleManager is stopped"));
+    }
     const { sourcePath, snapshotPath, snapshotHash } = record;
     if (!canActivateBubble(record)) {
       const existingSession = this.bubbleSessions.get(sourcePath);
@@ -155,5 +162,28 @@ export class BubbleManager {
     this.bubbleSessions.set(sourcePath, { bubble, createdAt, snapshotHash });
 
     return bubble.start(snapshotPath, createdAt);
+  }
+
+  public async stop(force: boolean): Promise<void> {
+    this.closed = true;
+    const sessions = this.bubbleSessions.values().toArray();
+    this.bubbleSessions.clear();
+    this.bubbleSockets.clear();
+    this.routableBubbles.clear();
+
+    const errs = await Promise.allSettled(
+      sessions.map(({ bubble }) => bubble.stop(force)),
+    ).then((results) =>
+      results
+        .filter(
+          (result): result is PromiseRejectedResult =>
+            result.status === "rejected",
+        )
+        .map((result) => result.reason as Error),
+    );
+
+    if (errs.length > 0) {
+      throw new AggregateError(errs, "Failed to stop some bubbles");
+    }
   }
 }

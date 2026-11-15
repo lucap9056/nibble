@@ -1,4 +1,4 @@
-import { beforeEach, expect, mock, test } from "bun:test";
+import { beforeEach, expect, mock, spyOn, test } from "bun:test";
 import path from "node:path";
 import type { BubbleHandlers } from "@/bubbles/bubble";
 import { BubbleState } from "@/bubbles/bubble-state";
@@ -285,4 +285,19 @@ test("removes routes on disable and ignores the stopped bubble after re-enable",
   ];
   expect(calls).toHaveLength(3);
   expect(calls[2]?.routes).toEqual(expectedRoutes);
+});
+
+test("stop halts bubbles, suppresses route sends and rejects further syncs", async () => {
+  const manager = new BubbleManager({ onRoutesChange }, logger);
+  manager.sync(alpha);
+  const alphaBubble = FakeBubble.instances.get(alphaPath);
+  const stopSpy = spyOn(alphaBubble as FakeBubble, "stop");
+
+  await manager.stop(false);
+  expect(stopSpy).toHaveBeenCalledWith(false);
+
+  alphaBubble?.emit(Running, "/alpha-1.sock");
+  await Bun.sleep(0);
+  expect(calls).toHaveLength(0);
+  await expect(manager.sync(beta)).rejects.toThrow("BubbleManager is stopped");
 });
