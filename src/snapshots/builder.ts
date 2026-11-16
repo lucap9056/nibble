@@ -3,8 +3,9 @@ import { mkdir, rename } from "node:fs/promises";
 import { isBuiltin } from "node:module";
 import path from "node:path";
 import type { BunPlugin } from "bun";
-import { resolveBubbleEntry } from "@/utils/path";
+import { findBubbleEntry } from "@/utils/path";
 import { encodeDependencies } from "./dependencies";
+import { BubbleEntryNotFoundError } from "./errors";
 
 const NIBBLE_PACKAGE = /^@lucap9056\/nibble(\/|$)/;
 const NODE_MODULES_SEGMENT = `${path.sep}node_modules${path.sep}`;
@@ -75,7 +76,10 @@ export const buildSnapshot = async (
   bubbleName: string,
   snapshotRootDir: string,
 ): Promise<Snapshot> => {
-  const entryPath = await resolveBubbleEntry(sourceDir, bubbleName);
+  const entryPath = await findBubbleEntry(sourceDir, bubbleName);
+  if (!entryPath) {
+    throw new BubbleEntryNotFoundError(bubbleName);
+  }
   const snapshotDir = path.join(snapshotRootDir, bubbleName);
   const entryDir = JSON.stringify(path.dirname(entryPath));
   const packageIds = new Set<string>();
