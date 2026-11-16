@@ -4,13 +4,16 @@
   "workspaces": {
     "": {
       "name": "nibble",
-      "dependencies": {
-        "@lucap9056/nibble": "workspace:*",
-      },
       "devDependencies": {
         "@biomejs/biome": "^2.6.6",
         "@types/bun": "latest",
         "typescript": "^7",
+      },
+    },
+    "example": {
+      "name": "@lucap9056/nibble-example",
+      "dependencies": {
+        "@lucap9056/nibble": "workspace:*",
       },
     },
     "nibble-engine": {
@@ -56,6 +59,8 @@
     "@lucap9056/nibble": ["@lucap9056/nibble@workspace:nibble-sdk"],
 
     "@lucap9056/nibble-engine": ["@lucap9056/nibble-engine@workspace:nibble-engine"],
+
+    "@lucap9056/nibble-example": ["@lucap9056/nibble-example@workspace:example"],
 
     "@types/bun": ["@types/bun@1.4.4", "", { "dependencies": { "bun-types": "1.4.4" } }, "sha512-9wkRDXUXK124pEnAutE6n/l18j+i9GC5IAHK8TmX/2nlySETmky0OU6yL5U8pW1AoKh++AN9auDCr647BfurjQ=="],
 

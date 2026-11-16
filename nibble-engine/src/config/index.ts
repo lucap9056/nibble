@@ -12,13 +12,15 @@ export interface Config {
 export const ROUTER_BINARY_NAME =
   process.platform === "win32" ? "nibble-router.exe" : "nibble-router";
 
+const repoPath = path.resolve(import.meta.dir, "../../..");
+
 const rootPath = Bun.isStandaloneExecutable
   ? path.dirname(process.execPath)
-  : path.resolve(import.meta.dir, "../../..");
+  : path.join(repoPath, "example");
 
 const defaultRouterBinaryPath = Bun.isStandaloneExecutable
   ? path.join(rootPath, ROUTER_BINARY_NAME)
-  : path.join(rootPath, "nibble-router/bin", ROUTER_BINARY_NAME);
+  : path.join(repoPath, "nibble-router/bin", ROUTER_BINARY_NAME);
 
 const config: Config = {
   bubbleSourceDir: path.resolve(

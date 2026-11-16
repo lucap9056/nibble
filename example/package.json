@@ -1,0 +1,8 @@
+{
+  "name": "@lucap9056/nibble-example",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@lucap9056/nibble": "workspace:*"
+  }
+}
