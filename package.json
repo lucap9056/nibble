@@ -2,7 +2,7 @@
   "name": "nibble",
   "private": true,
   "type": "module",
-  "workspaces": ["nibble-sdk", "nibble-engine", "example"],
+  "workspaces": ["nibble-sdk", "nibble-engine", "example", "scripts"],
   "scripts": {
     "start": "bun run --cwd nibble-engine start",
     "build": "bun scripts/build.ts",

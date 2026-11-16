@@ -1,9 +1,10 @@
 import path from "node:path";
-import { ROUTER_BINARY_NAME } from "../nibble-engine/src/config";
+import { ROUTER_BINARY_NAME } from "@lucap9056/nibble-engine/config";
 import { buildRouter } from "./build-router";
 
 const rootPath = path.resolve(import.meta.dir, "..");
-const srcPath = path.join(rootPath, "nibble-engine/src");
+const enginePath = path.join(rootPath, "nibble-engine");
+const srcPath = path.join(enginePath, "src");
 
 const workerEntryPath = path.join(srcPath, "bubble.worker.ts");
 

@@ -30,6 +30,12 @@
       "name": "@lucap9056/nibble",
       "version": "0.1.0",
     },
+    "scripts": {
+      "name": "@lucap9056/nibble-scripts",
+      "dependencies": {
+        "@lucap9056/nibble-engine": "workspace:*",
+      },
+    },
   },
   "packages": {
     "@biomejs/biome": ["@biomejs/biome@2.6.6", "", { "optionalDependencies": { "@biomejs/cli-android-arm64": "2.6.6", "@biomejs/cli-android-x64": "2.6.6", "@biomejs/cli-darwin-arm64": "2.6.6", "@biomejs/cli-darwin-x64": "2.6.6", "@biomejs/cli-linux-arm64": "2.6.6", "@biomejs/cli-linux-arm64-musl": "2.6.6", "@biomejs/cli-linux-x64": "2.6.6", "@biomejs/cli-linux-x64-musl": "2.6.6", "@biomejs/cli-win32-arm64": "2.6.6", "@biomejs/cli-win32-x64": "2.6.6" }, "bin": { "biome": "bin/biome" } }, "sha512-NCgVJRyrU1+hsW1ILNaRqNAb9fRL4n49bwyef+wjVJQ488/bXbp0BfnNqTTExkiNQT3ugkgYKR1vK8NxsjlNSQ=="],
@@ -61,6 +67,8 @@
     "@lucap9056/nibble-engine": ["@lucap9056/nibble-engine@workspace:nibble-engine"],
 
     "@lucap9056/nibble-example": ["@lucap9056/nibble-example@workspace:example"],
+
+    "@lucap9056/nibble-scripts": ["@lucap9056/nibble-scripts@workspace:scripts"],
 
     "@types/bun": ["@types/bun@1.4.4", "", { "dependencies": { "bun-types": "1.4.4" } }, "sha512-9wkRDXUXK124pEnAutE6n/l18j+i9GC5IAHK8TmX/2nlySETmky0OU6yL5U8pW1AoKh++AN9auDCr647BfurjQ=="],
 
