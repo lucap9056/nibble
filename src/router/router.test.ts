@@ -131,7 +131,10 @@ const openWebSocket = (url: string, protocols?: string[]) => {
   const closed = Promise.withResolvers<[number, string]>();
 
   ws.onopen = () => opened.resolve();
-  ws.onerror = () => opened.reject(new Error("WebSocket error"));
+  ws.onerror = () => {
+    const error = new Error("WebSocket error");
+    opened.reject(error);
+  };
   ws.onmessage = (e) => {
     const message = String(e.data);
     const waiter = waiters.shift();
@@ -277,7 +280,9 @@ describe("RouterProcess proxy", () => {
       const session = openWebSocket(url);
       await session.next();
       session.ws.send("close-me");
-      expect(await session.closed).toEqual([4001, "server-bye"]);
+
+      const closeFrame = await session.closed;
+      expect(closeFrame).toEqual([4001, "server-bye"]);
     });
 
     test("returns a rejected upgrade verbatim and closes without forwarding pipelined bytes", async () => {

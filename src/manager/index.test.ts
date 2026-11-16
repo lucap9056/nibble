@@ -299,7 +299,9 @@ test("stop halts bubbles, suppresses route sends and rejects further syncs", asy
   alphaBubble?.emit(Running, "/alpha-1.sock");
   await Bun.sleep(0);
   expect(calls).toHaveLength(0);
-  await expect(manager.sync(beta)).rejects.toThrow("BubbleManager is stopped");
+
+  const syncAfterStop = manager.sync(beta);
+  await expect(syncAfterStop).rejects.toThrow("BubbleManager is stopped");
 });
 
 test("stats reflects state, snapshot and routing of active bubbles", () => {
