@@ -6,6 +6,7 @@ export interface Config {
   bubbleSnapshotDir: string;
   routerBinaryPath: string;
   routerListen: string;
+  controlSocketPath: string;
 }
 
 export const ROUTER_BINARY_NAME =
@@ -33,6 +34,9 @@ const config: Config = {
     Bun.env.ROUTER_BINARY ?? defaultRouterBinaryPath,
   ),
   routerListen: Bun.env.ROUTER_LISTEN ?? "127.0.0.1:8080",
+  controlSocketPath: path.resolve(
+    Bun.env.CONTROL_SOCKET ?? path.join(rootPath, "nibble.sock"),
+  ),
 };
 
 export default config;

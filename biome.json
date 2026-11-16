@@ -49,6 +49,16 @@
           }
         }
       }
+    },
+    {
+      "includes": ["src/control/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "useNamingConvention": "off"
+          }
+        }
+      }
     }
   ]
 }

@@ -1,6 +1,8 @@
+import { rm } from "node:fs/promises";
 import { relative, sep } from "node:path";
 import { readBootstrap } from "@/bootstrap";
 import config from "@/config";
+import { createControlRoutes } from "@/control";
 import { BubbleManager } from "@/manager";
 import { RouterProcess } from "@/router";
 import { resolveSnapshot } from "@/snapshots";
@@ -41,6 +43,21 @@ await Promise.all(
     ),
 );
 
+const { controlSocketPath } = config;
+await rm(controlSocketPath, { force: true });
+const controlRoutes = createControlRoutes({
+  manager,
+  logger,
+  sourceDir,
+  snapshotDir,
+});
+const controlServer = Bun.serve({
+  unix: controlSocketPath,
+  routes: controlRoutes,
+  fetch: () => new Response("Not Found", { status: 404 }),
+});
+logger.info("control listening", { socket: controlSocketPath });
+
 let shutdownReason: string | undefined;
 const shutdownRequest = Promise.withResolvers<void>();
 const requestShutdown = (reason: string) => {
@@ -66,6 +83,9 @@ try {
 logger.info("engine shutting down", {
   reason: shutdownReason ?? "router exited",
 });
+await controlServer
+  .stop()
+  .catch((err) => logger.error("control stop failed", { err }));
 await router
   .stop(false)
   .catch((err) => logger.error("router stop failed", { err }));

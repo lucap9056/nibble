@@ -10,6 +10,11 @@ const VALID_OPTIONS_MASK = Object.values(BubbleOption)
   .filter((value) => typeof value === "number")
   .reduce((mask, flag) => mask | flag, 0);
 
+export const isValidBubbleOptions = (options: unknown): options is number =>
+  typeof options === "number" &&
+  Number.isInteger(options) &&
+  (options & ~VALID_OPTIONS_MASK) === 0;
+
 export const isExpectedBubble = (value: unknown): value is ExpectedBubble => {
   if (typeof value !== "object" || value === null) return false;
 
@@ -17,9 +22,5 @@ export const isExpectedBubble = (value: unknown): value is ExpectedBubble => {
   if (typeof path !== "string" || path.length === 0) return false;
   if (hash !== undefined && typeof hash !== "string") return false;
 
-  return (
-    typeof options === "number" &&
-    Number.isInteger(options) &&
-    (options & ~VALID_OPTIONS_MASK) === 0
-  );
+  return isValidBubbleOptions(options);
 };
