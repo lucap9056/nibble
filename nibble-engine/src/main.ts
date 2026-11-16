@@ -1,8 +1,14 @@
 import { rm } from "node:fs/promises";
-import { readBootstrap } from "@/bootstrap";
+import { type BootstrapBubble, readBootstrap } from "@/bootstrap";
 import config from "@/config";
 import { createControlRoutes } from "@/control";
 import { BubbleManager } from "@/manager";
+import {
+  type BootstrapFailure,
+  type BootstrapFailureStage,
+  sendReport,
+  toBootstrapFailure,
+} from "@/report";
 import { RouterProcess } from "@/router";
 import { buildSnapshot, resolveSnapshot } from "@/snapshots";
 import { createLogger } from "@/utils/logger";
@@ -13,6 +19,10 @@ const bootstrap = await readBootstrap(logger).catch((err) => {
   logger.error("bootstrap failed", { err });
   process.exit(1);
 });
+await sendReport(bootstrap.daemon, { type: "received" }).catch((err) => {
+  logger.error("received report failed", { err });
+  process.exit(1);
+});
 
 const router = new RouterProcess(config.routerBinaryPath);
 const manager = new BubbleManager(
@@ -20,31 +30,48 @@ const manager = new BubbleManager(
   logger,
 );
 
-logger.info("engine starting", { bubbles: bootstrap.bubbles.length });
+logger.info("engine starting", {
+  bootstrapId: bootstrap.daemon?.id,
+  bubbles: bootstrap.bubbles.length,
+});
 
 const { bubbleSourceDir: sourceDir, bubbleSnapshotDir: snapshotDir } = config;
-await Promise.all(
-  bootstrap.bubbles.map(({ name: bubbleName, snapshotHash, routing }) =>
-    (snapshotHash === undefined
-      ? buildSnapshot(sourceDir, bubbleName, snapshotDir)
-      : resolveSnapshot(bubbleName, snapshotDir, snapshotHash)
-    )
-      .then(({ snapshotPath, snapshotHash: resolvedHash }) =>
-        manager.sync({
-          bubbleName,
-          snapshotPath,
-          snapshotHash: resolvedHash,
-          routing,
-        }),
-      )
-      .catch((err) => {
-        logger.error("bubble sync failed", {
-          bubble: bubbleName,
-          snapshotHash,
-          err,
-        });
-      }),
-  ),
+const syncBootstrapBubble = async ({
+  index,
+  name: bubbleName,
+  snapshotHash,
+  routing,
+}: BootstrapBubble): Promise<BootstrapFailure | undefined> => {
+  let stage: BootstrapFailureStage =
+    snapshotHash === undefined ? "build" : "resolve";
+  try {
+    const { snapshotPath, snapshotHash: resolvedHash } =
+      snapshotHash === undefined
+        ? await buildSnapshot(sourceDir, bubbleName, snapshotDir)
+        : await resolveSnapshot(bubbleName, snapshotDir, snapshotHash);
+    stage = "start";
+    await manager.sync({
+      bubbleName,
+      snapshotPath,
+      snapshotHash: resolvedHash,
+      routing,
+    });
+  } catch (err) {
+    logger.error("bubble sync failed", {
+      bubble: bubbleName,
+      snapshotHash,
+      stage,
+      err,
+    });
+    return toBootstrapFailure(index, bubbleName, stage, err);
+  }
+};
+const syncResults = await Promise.all(
+  bootstrap.bubbles.map(syncBootstrapBubble),
+);
+const syncFailures = syncResults.filter((failure) => failure !== undefined);
+const bootstrapFailures = [...bootstrap.failures, ...syncFailures].sort(
+  (a, b) => a.index - b.index,
 );
 
 const { controlSocketPath } = config;
@@ -76,6 +103,14 @@ let exitCode = 0;
 try {
   await router.start(config.routerListen);
   logger.info("router listening", { listen: config.routerListen });
+  await sendReport(bootstrap.daemon, {
+    type: "processed",
+    failures: bootstrapFailures,
+  }).catch((err) => {
+    exitCode = 1;
+    logger.error("processed report failed", { err });
+    requestShutdown("processed report failed");
+  });
   await Promise.race([shutdownRequest.promise, router.exited]);
 } catch (err) {
   if (shutdownReason === undefined) {
