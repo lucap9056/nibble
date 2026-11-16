@@ -17,10 +17,7 @@ type Manager struct {
 
 func NewManager() *Manager {
 	m := &Manager{}
-	m.state.Store(&Generation{
-		table:      routes.Table{},
-		forwarders: map[string]*Forwarder{},
-	})
+	m.state.Store(&Generation{forwarders: map[string]*Forwarder{}})
 	return m
 }
 
@@ -31,8 +28,8 @@ func (m *Manager) SetRoutes(entries []routes.Entry) error {
 	}
 
 	previous := m.state.Load()
-	forwarders := make(map[string]*Forwarder, len(table))
-	for _, entry := range table {
+	forwarders := make(map[string]*Forwarder, len(entries))
+	for _, entry := range entries {
 		if _, ok := forwarders[entry.SocketPath]; ok {
 			continue
 		}
@@ -58,6 +55,10 @@ func (m *Manager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	resolved, ok := state.table.Resolve(r.RequestURI)
 	if !ok {
 		writeError(w, r, http.StatusNotFound)
+		return
+	}
+	if resolved.RedirectTo != "" {
+		writeRedirect(w, r, resolved.RedirectTo)
 		return
 	}
 	state.forwarders[resolved.Entry.SocketPath].Forward(w, r, resolved.UpstreamPath, resolved.Prefix)

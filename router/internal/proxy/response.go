@@ -24,6 +24,16 @@ func writeError(w http.ResponseWriter, r *http.Request, status int) {
 	w.Write(body)
 }
 
+func writeRedirect(w http.ResponseWriter, r *http.Request, location string) {
+	header := w.Header()
+	header.Set("Location", location)
+	header.Set("Content-Length", "0")
+	if isUpgradeRequest(r.Header) {
+		header.Set("Connection", "close")
+	}
+	w.WriteHeader(http.StatusPermanentRedirect)
+}
+
 func isUpgradeRequest(header http.Header) bool {
 	if header.Get("Upgrade") == "" {
 		return false
