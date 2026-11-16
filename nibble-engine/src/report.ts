@@ -1,20 +1,34 @@
-export type BootstrapFailureStage =
-  | "invalid"
-  | "duplicate"
-  | "build"
-  | "resolve"
-  | "start";
+import type { ExpectedBubble } from "@/expected-bubble";
 
-export interface BootstrapFailure {
+export interface ReportError {
+  name: string;
+  message: string;
+}
+
+export type BootstrapRejectReason = "invalid" | "duplicate" | "missing-source";
+
+export interface BootstrapRejection {
   index: number;
   name?: string;
-  stage: BootstrapFailureStage;
-  error: { name: string; message: string };
+  reason: BootstrapRejectReason;
+  error: ReportError;
 }
+
+export type BubbleSyncStage = "build" | "resolve" | "start";
+
+export type AcceptedBubble = ExpectedBubble &
+  (
+    | { status: "running"; runningHash: string }
+    | { status: "failed"; stage: BubbleSyncStage; error: ReportError }
+  );
 
 export type EngineReport =
   | { type: "received" }
-  | { type: "processed"; failures: BootstrapFailure[] };
+  | {
+      type: "processed";
+      bubbles: AcceptedBubble[];
+      rejected: BootstrapRejection[];
+    };
 
 export interface DaemonEndpoint {
   id: string;
@@ -30,15 +44,9 @@ export const isDaemonEndpoint = (value: unknown): value is DaemonEndpoint => {
   return isNonEmptyString(id) && isNonEmptyString(reportSocket);
 };
 
-export const toBootstrapFailure = (
-  index: number,
-  name: string | undefined,
-  stage: BootstrapFailureStage,
-  err: unknown,
-): BootstrapFailure => {
-  const { name: errorName, message } =
-    err instanceof Error ? err : new Error(String(err));
-  return { index, name, stage, error: { name: errorName, message } };
+export const toReportError = (err: unknown): ReportError => {
+  const { name, message } = err instanceof Error ? err : new Error(String(err));
+  return { name, message };
 };
 
 export const sendReport = async (

@@ -1,13 +1,14 @@
 import { rm } from "node:fs/promises";
-import { type BootstrapBubble, readBootstrap } from "@/bootstrap";
+import { readBootstrap } from "@/bootstrap";
 import config from "@/config";
 import { createControlRoutes } from "@/control";
+import type { ExpectedBubble } from "@/expected-bubble";
 import { BubbleManager } from "@/manager";
 import {
-  type BootstrapFailure,
-  type BootstrapFailureStage,
+  type AcceptedBubble,
+  type BubbleSyncStage,
   sendReport,
-  toBootstrapFailure,
+  toReportError,
 } from "@/report";
 import { RouterProcess } from "@/router";
 import { buildSnapshot, resolveSnapshot } from "@/snapshots";
@@ -15,7 +16,8 @@ import { createLogger } from "@/utils/logger";
 
 const logger = createLogger("engine");
 
-const bootstrap = await readBootstrap(logger).catch((err) => {
+const { bubbleSourceDir: sourceDir, bubbleSnapshotDir: snapshotDir } = config;
+const bootstrap = await readBootstrap(logger, sourceDir).catch((err) => {
   logger.error("bootstrap failed", { err });
   process.exit(1);
 });
@@ -35,15 +37,11 @@ logger.info("engine starting", {
   bubbles: bootstrap.bubbles.length,
 });
 
-const { bubbleSourceDir: sourceDir, bubbleSnapshotDir: snapshotDir } = config;
-const syncBootstrapBubble = async ({
-  index,
-  name: bubbleName,
-  snapshotHash,
-  routing,
-}: BootstrapBubble): Promise<BootstrapFailure | undefined> => {
-  let stage: BootstrapFailureStage =
-    snapshotHash === undefined ? "build" : "resolve";
+const syncBootstrapBubble = async (
+  bubble: ExpectedBubble,
+): Promise<AcceptedBubble> => {
+  const { name: bubbleName, snapshotHash, routing } = bubble;
+  let stage: BubbleSyncStage = snapshotHash === undefined ? "build" : "resolve";
   try {
     const { snapshotPath, snapshotHash: resolvedHash } =
       snapshotHash === undefined
@@ -56,6 +54,7 @@ const syncBootstrapBubble = async ({
       snapshotHash: resolvedHash,
       routing,
     });
+    return { ...bubble, status: "running", runningHash: resolvedHash };
   } catch (err) {
     logger.error("bubble sync failed", {
       bubble: bubbleName,
@@ -63,15 +62,12 @@ const syncBootstrapBubble = async ({
       stage,
       err,
     });
-    return toBootstrapFailure(index, bubbleName, stage, err);
+    const error = toReportError(err);
+    return { ...bubble, status: "failed", stage, error };
   }
 };
-const syncResults = await Promise.all(
+const acceptedBubbles = await Promise.all(
   bootstrap.bubbles.map(syncBootstrapBubble),
-);
-const syncFailures = syncResults.filter((failure) => failure !== undefined);
-const bootstrapFailures = [...bootstrap.failures, ...syncFailures].sort(
-  (a, b) => a.index - b.index,
 );
 
 const { controlSocketPath } = config;
@@ -105,7 +101,8 @@ try {
   logger.info("router listening", { listen: config.routerListen });
   await sendReport(bootstrap.daemon, {
     type: "processed",
-    failures: bootstrapFailures,
+    bubbles: acceptedBubbles,
+    rejected: bootstrap.rejected,
   }).catch((err) => {
     exitCode = 1;
     logger.error("processed report failed", { err });
