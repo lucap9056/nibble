@@ -3,16 +3,11 @@ import type { RouteEntry } from "@/router";
 import type { Logger } from "@/utils/logger";
 import { toRoutePath } from "@/utils/path";
 
-export enum BubbleOption {
-  Enabled = 1 << 0,
-  Routing = 1 << 1,
-}
-
 export type BubbleRecord = {
   bubbleName: string;
   snapshotPath: string;
   snapshotHash: string;
-  options: number;
+  routing: boolean;
 };
 
 interface ActiveBubbleSession {
@@ -33,14 +28,6 @@ export interface BubbleStats {
 export interface BubbleManagerHandlers {
   onRoutesChange: (routes: RouteEntry[]) => Promise<void>;
 }
-
-export const canActivateBubble = ({ options }: BubbleRecord): boolean => {
-  return Boolean(options & BubbleOption.Enabled);
-};
-
-const canRouteBubble = ({ options }: BubbleRecord): boolean => {
-  return Boolean(options & BubbleOption.Routing);
-};
 
 export class BubbleManager {
   private readonly eventHandlers: BubbleManagerHandlers;
@@ -93,15 +80,9 @@ export class BubbleManager {
     if (this.closed) {
       return Promise.reject(new Error("BubbleManager is stopped"));
     }
-    const { bubbleName, snapshotPath, snapshotHash } = record;
-    if (!canActivateBubble(record)) {
-      this.disable(bubbleName);
-      return Promise.resolve();
-    }
-
-    const routable = canRouteBubble(record);
-    if (routable !== this.routableBubbles.has(bubbleName)) {
-      if (routable) {
+    const { bubbleName, snapshotPath, snapshotHash, routing } = record;
+    if (routing !== this.routableBubbles.has(bubbleName)) {
+      if (routing) {
         this.routableBubbles.add(bubbleName);
       } else {
         this.routableBubbles.delete(bubbleName);
@@ -165,7 +146,7 @@ export class BubbleManager {
     return bubble.start(snapshotPath, createdAt);
   }
 
-  public disable(bubbleName: string): void {
+  public remove(bubbleName: string): void {
     const existingSession = this.bubbleSessions.get(bubbleName);
     if (existingSession) {
       this.bubbleSessions.delete(bubbleName);

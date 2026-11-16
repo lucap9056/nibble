@@ -1,26 +1,22 @@
-import { BubbleOption } from "@/manager";
+import { isBubbleName } from "@/utils/path";
 
 export interface ExpectedBubble {
-  path: string; // sourcePath
-  hash?: string; // snapshotHash
-  options: number;
+  name: string;
+  snapshotHash?: string;
+  routing: boolean;
 }
-
-const VALID_OPTIONS_MASK = Object.values(BubbleOption)
-  .filter((value) => typeof value === "number")
-  .reduce((mask, flag) => mask | flag, 0);
-
-export const isValidBubbleOptions = (options: unknown): options is number =>
-  typeof options === "number" &&
-  Number.isInteger(options) &&
-  (options & ~VALID_OPTIONS_MASK) === 0;
 
 export const isExpectedBubble = (value: unknown): value is ExpectedBubble => {
   if (typeof value !== "object" || value === null) return false;
 
-  const { path, hash, options } = value as Record<string, unknown>;
-  if (typeof path !== "string" || path.length === 0) return false;
-  if (hash !== undefined && typeof hash !== "string") return false;
+  const { name, snapshotHash, routing } = value as Record<string, unknown>;
+  if (typeof name !== "string" || !isBubbleName(name)) return false;
+  if (
+    snapshotHash !== undefined &&
+    (typeof snapshotHash !== "string" || snapshotHash.length === 0)
+  ) {
+    return false;
+  }
 
-  return isValidBubbleOptions(options);
+  return typeof routing === "boolean";
 };

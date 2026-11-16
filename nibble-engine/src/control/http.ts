@@ -7,7 +7,7 @@ import type { Logger } from "@/utils/logger";
 import { isBubbleName } from "@/utils/path";
 
 export interface ControlContext {
-  manager: Pick<BubbleManager, "stats" | "sync" | "disable" | "restart">;
+  manager: Pick<BubbleManager, "stats" | "sync" | "remove" | "restart">;
   logger: Logger;
   sourceDir: string;
   snapshotDir: string;

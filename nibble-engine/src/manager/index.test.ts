@@ -39,8 +39,7 @@ mock.module("@/bubbles", () => ({
   // biome-ignore lint/style/useNamingConvention: keys must match the real module's exports
   BubbleState,
 }));
-const { BubbleManager, BubbleOption } = await import("@/manager");
-const { Enabled, Routing } = BubbleOption;
+const { BubbleManager } = await import("@/manager");
 
 const alphaName = "alpha";
 const betaName = "beta";
@@ -52,23 +51,23 @@ const alpha: BubbleRecord = {
   bubbleName: alphaName,
   snapshotPath: "/alpha.js",
   snapshotHash: "hash",
-  options: Enabled | Routing,
+  routing: true,
 };
 const beta: BubbleRecord = {
   bubbleName: betaName,
   snapshotPath: "/beta.js",
   snapshotHash: "hash",
-  options: Enabled | Routing,
+  routing: true,
 };
 const gamma: BubbleRecord = {
   bubbleName: gammaName,
   snapshotPath: "/gamma.js",
   snapshotHash: "hash",
-  options: Enabled | Routing,
+  routing: true,
 };
-const unroutedAlpha: BubbleRecord = { ...alpha, options: Enabled };
-const unroutedBeta: BubbleRecord = { ...beta, options: Enabled };
-const unroutedGamma: BubbleRecord = { ...gamma, options: Enabled };
+const unroutedAlpha: BubbleRecord = { ...alpha, routing: false };
+const unroutedBeta: BubbleRecord = { ...beta, routing: false };
+const unroutedGamma: BubbleRecord = { ...gamma, routing: false };
 
 interface RoutesCall {
   routes: RouteEntry[];
@@ -253,8 +252,7 @@ test("sends routes when routing is toggled on a running bubble", async () => {
   expect(calls).toHaveLength(2);
 });
 
-test("removes routes on disable and ignores the stopped bubble after re-enable", async () => {
-  const disabledAlpha: BubbleRecord = { ...alpha, options: 0 };
+test("removes routes on remove and ignores the stopped bubble after re-sync", async () => {
   const manager = new BubbleManager({ onRoutesChange }, logger);
   manager.sync(alpha);
   const oldBubble = FakeBubble.instances.get(alphaName);
@@ -263,7 +261,7 @@ test("removes routes on disable and ignores the stopped bubble after re-enable",
   calls[0]?.settle.resolve();
   await Bun.sleep(0);
 
-  manager.sync(disabledAlpha);
+  manager.remove(alphaName);
   await Bun.sleep(0);
   expect(calls).toHaveLength(2);
   expect(calls[1]?.routes).toEqual([]);
@@ -341,12 +339,12 @@ test("stats reflects state, snapshot and routing of active bubbles", () => {
     routed: false,
   });
 
-  manager.sync({ ...alpha, options: 0 });
-  const disabledStats = manager.stats();
-  expect(disabledStats.has(alphaName)).toBe(false);
+  manager.remove(alphaName);
+  const removedStats = manager.stats();
+  expect(removedStats.has(alphaName)).toBe(false);
 });
 
-test("restart reuses the active snapshot and disable removes the bubble", async () => {
+test("restart reuses the active snapshot and remove drops the bubble", async () => {
   const manager = new BubbleManager({ onRoutesChange }, logger);
 
   const restartInactive = manager.restart(alphaName);
@@ -360,7 +358,7 @@ test("restart reuses the active snapshot and disable removes the bubble", async 
   const [restartedSnapshotPath] = startSpy.mock.lastCall ?? [];
   expect(restartedSnapshotPath).toBe(alpha.snapshotPath);
 
-  manager.disable(alphaName);
-  const disabledStats = manager.stats();
-  expect(disabledStats.has(alphaName)).toBe(false);
+  manager.remove(alphaName);
+  const removedStats = manager.stats();
+  expect(removedStats.has(alphaName)).toBe(false);
 });

@@ -1,17 +1,12 @@
-import { buildSnapshot, hashSnapshot, type Snapshot } from "./builder";
+import { hashSnapshot, type Snapshot } from "./builder";
 import { SnapshotNotFoundError } from "./errors";
 import { listSnapshots } from "./viewer";
 
 export const resolveSnapshot = async (
-  sourceDir: string,
   bubbleName: string,
   snapshotDir: string,
-  snapshotHash?: string,
+  snapshotHash: string,
 ): Promise<Snapshot> => {
-  if (snapshotHash === undefined) {
-    return buildSnapshot(sourceDir, bubbleName, snapshotDir);
-  }
-
   const snapshots = await listSnapshots(bubbleName, snapshotDir);
   const snapshot = snapshots.find(
     (candidate) => candidate.snapshotHash === snapshotHash,

@@ -1,13 +1,11 @@
 import { rm } from "node:fs/promises";
-import { relative, sep } from "node:path";
 import { readBootstrap } from "@/bootstrap";
 import config from "@/config";
 import { createControlRoutes } from "@/control";
 import { BubbleManager } from "@/manager";
 import { RouterProcess } from "@/router";
-import { resolveSnapshot } from "@/snapshots";
+import { buildSnapshot, resolveSnapshot } from "@/snapshots";
 import { createLogger } from "@/utils/logger";
-import { toBubbleName } from "@/utils/path";
 
 const logger = createLogger("engine");
 
@@ -26,21 +24,27 @@ logger.info("engine starting", { bubbles: bootstrap.bubbles.length });
 
 const { bubbleSourceDir: sourceDir, bubbleSnapshotDir: snapshotDir } = config;
 await Promise.all(
-  bootstrap.bubbles
-    .filter(({ options }) => options !== 0)
-    .map(({ path, hash, options }) =>
-      Promise.try(() => toBubbleName(sourceDir, path))
-        .then((bubbleName) =>
-          resolveSnapshot(sourceDir, bubbleName, snapshotDir, hash),
-        )
-        .then(({ bubbleName, snapshotPath, snapshotHash }) =>
-          manager.sync({ bubbleName, snapshotPath, snapshotHash, options }),
-        )
-        .catch((err) => {
-          const bubble = relative(sourceDir, path).split(sep).join("/");
-          logger.error("bubble sync failed", { bubble, hash, err });
+  bootstrap.bubbles.map(({ name: bubbleName, snapshotHash, routing }) =>
+    (snapshotHash === undefined
+      ? buildSnapshot(sourceDir, bubbleName, snapshotDir)
+      : resolveSnapshot(bubbleName, snapshotDir, snapshotHash)
+    )
+      .then(({ snapshotPath, snapshotHash: resolvedHash }) =>
+        manager.sync({
+          bubbleName,
+          snapshotPath,
+          snapshotHash: resolvedHash,
+          routing,
         }),
-    ),
+      )
+      .catch((err) => {
+        logger.error("bubble sync failed", {
+          bubble: bubbleName,
+          snapshotHash,
+          err,
+        });
+      }),
+  ),
 );
 
 const { controlSocketPath } = config;

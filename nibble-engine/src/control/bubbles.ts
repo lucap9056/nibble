@@ -1,13 +1,7 @@
 import { BubbleState } from "@/bubbles";
-import { isValidBubbleOptions } from "@/expected-bubble";
-import { BubbleOption, type BubbleStats } from "@/manager";
+import type { BubbleStats } from "@/manager";
 import { resolveSnapshot } from "@/snapshots";
-import {
-  findBubbleEntry,
-  listBubbleEntries,
-  toRelativePosixPath,
-  toRoutePath,
-} from "@/utils/path";
+import { toRoutePath } from "@/utils/path";
 import {
   type ControlContext,
   ControlError,
@@ -18,17 +12,17 @@ import {
 
 const BUBBLE_PREFIX = "/bubbles/";
 
-const toStatusView = ({
-  state,
-  snapshotHash,
-  createdAt,
-  routing,
-  routed,
-}: BubbleStats) => {
+const toBubbleView = (
+  bubbleName: string,
+  { state, snapshotHash, createdAt, routing, routed }: BubbleStats,
+) => {
+  const route = toRoutePath(bubbleName);
   const stateName = BubbleState[state].toLowerCase();
   const createdAtIso = new Date(createdAt).toISOString();
 
   return {
+    name: bubbleName,
+    route,
     state: stateName,
     snapshotHash,
     createdAt: createdAtIso,
@@ -37,42 +31,36 @@ const toStatusView = ({
   };
 };
 
-const toBubbleView = (
-  sourceDir: string,
-  bubbleName: string,
-  entryPath: string | undefined,
-  status: BubbleStats | undefined,
-) => {
-  const route = toRoutePath(bubbleName);
-  const entry = entryPath ? toRelativePosixPath(sourceDir, entryPath) : null;
-  const statusView = status ? toStatusView(status) : null;
-
-  return { name: bubbleName, route, entry, status: statusView };
-};
-
 const parseSyncBody = async (req: Request) => {
   const body = await req.json().catch(() => undefined);
-  const { hash, options } = (body ?? {}) as Record<string, unknown>;
+  const { snapshotHash, routing } = (body ?? {}) as Record<string, unknown>;
 
-  if (!isValidBubbleOptions(options)) {
-    throw new ControlError(400, "options must be a valid BubbleOption mask");
+  if (typeof snapshotHash !== "string" || snapshotHash.length === 0) {
+    throw new ControlError(400, "snapshotHash must be a non-empty string");
   }
-  if (hash !== undefined && typeof hash !== "string") {
-    throw new ControlError(400, "hash must be a string");
+  if (typeof routing !== "boolean") {
+    throw new ControlError(400, "routing must be a boolean");
   }
 
-  return { hash, options };
+  return { snapshotHash, routing };
 };
 
 export const createBubbleRoutes = (
-  { manager, logger, sourceDir, snapshotDir }: ControlContext,
+  { manager, logger, snapshotDir }: ControlContext,
   enqueue: SerialQueue,
 ) => {
-  const viewBubble = async (bubbleName: string) => {
-    const entryPath = await findBubbleEntry(sourceDir, bubbleName);
-    const status = manager.stats().get(bubbleName);
+  const requireStats = (bubbleName: string): BubbleStats => {
+    const stats = manager.stats().get(bubbleName);
+    if (!stats) {
+      throw new ControlError(404, `Bubble is not running: ${bubbleName}`);
+    }
 
-    return toBubbleView(sourceDir, bubbleName, entryPath, status);
+    return stats;
+  };
+
+  const viewBubble = (bubbleName: string) => {
+    const stats = requireStats(bubbleName);
+    return toBubbleView(bubbleName, stats);
   };
 
   const logStartFailure = (bubbleName: string, err: unknown) =>
@@ -81,25 +69,12 @@ export const createBubbleRoutes = (
   return {
     "/bubbles": {
       GET: handle(async () => {
-        const entries = await listBubbleEntries(sourceDir);
-        const entryPairs = entries.map(
-          ({ bubbleName, entryPath }) => [bubbleName, entryPath] as const,
-        );
-        const entryPaths = new Map(entryPairs);
-
-        const stats = manager.stats();
-        const knownNames = [...entryPaths.keys(), ...stats.keys()];
-        const bubbleNames = new Set(knownNames)
-          .values()
+        const bubbles = manager
+          .stats()
+          .entries()
+          .map(([bubbleName, stats]) => toBubbleView(bubbleName, stats))
           .toArray()
-          .sort((a, b) => a.localeCompare(b));
-
-        const bubbles = bubbleNames.map((bubbleName) => {
-          const entryPath = entryPaths.get(bubbleName);
-          const status = stats.get(bubbleName);
-
-          return toBubbleView(sourceDir, bubbleName, entryPath, status);
-        });
+          .sort((a, b) => a.name.localeCompare(b.name));
 
         return Response.json({ bubbles });
       }),
@@ -108,54 +83,53 @@ export const createBubbleRoutes = (
     "/bubbles/*": {
       GET: handle(async (req) => {
         const bubbleName = parseBubbleName(req, BUBBLE_PREFIX);
-        const bubble = await viewBubble(bubbleName);
-        if (!bubble.entry && !bubble.status) {
-          throw new ControlError(404, `Bubble not found: ${bubble.name}`);
-        }
+        const bubble = viewBubble(bubbleName);
 
         return Response.json(bubble);
       }),
 
       PUT: handle(async (req) => {
         const bubbleName = parseBubbleName(req, BUBBLE_PREFIX);
-        const { hash, options } = await parseSyncBody(req);
+        const { snapshotHash, routing } = await parseSyncBody(req);
 
         await enqueue(bubbleName, async () => {
-          if (!(options & BubbleOption.Enabled)) {
-            manager.disable(bubbleName);
-            return;
-          }
-
-          const { snapshotPath, snapshotHash } = await resolveSnapshot(
-            sourceDir,
+          const { snapshotPath } = await resolveSnapshot(
             bubbleName,
             snapshotDir,
-            hash,
+            snapshotHash,
           );
 
           manager
-            .sync({ bubbleName, snapshotPath, snapshotHash, options })
+            .sync({ bubbleName, snapshotPath, snapshotHash, routing })
             .catch((err) => logStartFailure(bubbleName, err));
         });
 
-        const bubble = await viewBubble(bubbleName);
+        const bubble = viewBubble(bubbleName);
         return Response.json(bubble, { status: 202 });
+      }),
+
+      DELETE: handle(async (req) => {
+        const bubbleName = parseBubbleName(req, BUBBLE_PREFIX);
+
+        await enqueue(bubbleName, async () => {
+          requireStats(bubbleName);
+          manager.remove(bubbleName);
+        });
+
+        return new Response(null, { status: 204 });
       }),
 
       POST: handle(async (req) => {
         const bubbleName = parseBubbleName(req, BUBBLE_PREFIX);
 
         await enqueue(bubbleName, async () => {
-          if (!manager.stats().has(bubbleName)) {
-            throw new ControlError(404, `Bubble is not active: ${bubbleName}`);
-          }
-
+          requireStats(bubbleName);
           manager
             .restart(bubbleName)
             .catch((err) => logStartFailure(bubbleName, err));
         });
 
-        const bubble = await viewBubble(bubbleName);
+        const bubble = viewBubble(bubbleName);
         return Response.json(bubble, { status: 202 });
       }),
     },

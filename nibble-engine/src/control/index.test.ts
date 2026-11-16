@@ -15,10 +15,24 @@ let sourceDir: string;
 let snapshotDir: string;
 let stats: Map<string, BubbleStats>;
 
+const running = (snapshotHash: string, routing: boolean): BubbleStats => ({
+  state: BubbleState.Running,
+  snapshotHash,
+  createdAt: CREATED_AT,
+  routing,
+  routed: routing,
+});
+
 const manager = {
   stats: () => stats,
-  sync: mock((_record: BubbleRecord) => Promise.resolve()),
-  disable: mock((_bubbleName: string) => {}),
+  sync: mock(({ bubbleName, snapshotHash, routing }: BubbleRecord) => {
+    const bubbleStats = running(snapshotHash, routing);
+    stats.set(bubbleName, bubbleStats);
+    return Promise.resolve();
+  }),
+  remove: mock((bubbleName: string) => {
+    stats.delete(bubbleName);
+  }),
   restart: mock((_bubbleName: string) => Promise.resolve()),
 };
 const logger = { error: () => {} } as unknown as Logger;
@@ -29,7 +43,8 @@ beforeEach(async () => {
   snapshotDir = path.join(rootDir, "snapshots");
   stats = new Map();
   manager.sync.mockClear();
-  manager.disable.mockClear();
+  manager.remove.mockClear();
+  manager.restart.mockClear();
 });
 
 afterEach(async () => {
@@ -40,6 +55,9 @@ const writeEntry = (file: string, content = "export default 1;") => {
   const entryPath = path.join(sourceDir, file);
   return Bun.write(entryPath, content);
 };
+
+const createRoutes = () =>
+  createControlRoutes({ manager, logger, sourceDir, snapshotDir });
 
 const send = async (
   handler: (req: Request) => Promise<Response>,
@@ -57,122 +75,12 @@ const send = async (
   return { status: response.status, body: json };
 };
 
-const running = (snapshotHash: string): BubbleStats => ({
-  state: BubbleState.Running,
-  snapshotHash,
-  createdAt: CREATED_AT,
-  routing: true,
-  routed: true,
-});
-
-test("bubble endpoints list, inspect and sync bubbles", async () => {
-  await writeEntry("foo.bubble.js");
-  await writeEntry("foo.bubble.ts");
-  const goneStats = running("old");
-  stats.set("gone", goneStats);
-
-  const routes = createControlRoutes({
-    manager,
-    logger,
-    sourceDir,
-    snapshotDir,
-  });
-  const { GET: list } = routes["/bubbles"];
-  const { GET, PUT, POST } = routes["/bubbles/*"];
-
-  const listed = await send(list, "GET", "/bubbles");
-  expect(listed.body.bubbles).toMatchObject([
-    { name: "foo", route: "/foo", entry: "foo.bubble.ts", status: null },
-    {
-      name: "gone",
-      entry: null,
-      status: { state: "running", snapshotHash: "old" },
-    },
-  ]);
-
-  const missing = await send(GET, "GET", "/bubbles/missing");
-  expect(missing.status).toBe(404);
-
-  const invalidName = await send(GET, "GET", "/bubbles/bad%20name");
-  expect(invalidName.status).toBe(400);
-
-  const restartInactive = await send(POST, "POST", "/bubbles/foo");
-  expect(restartInactive.status).toBe(404);
-
-  const invalidOptions = await send(PUT, "PUT", "/bubbles/foo", {
-    options: 8,
-  });
-  expect(invalidOptions.status).toBe(400);
-
-  const enabled = await send(PUT, "PUT", "/bubbles/foo", { options: 3 });
-  const [syncedRecord] = manager.sync.mock.lastCall ?? [];
-  expect(enabled.status).toBe(202);
-  expect(syncedRecord).toMatchObject({ bubbleName: "foo", options: 3 });
-
-  const disabled = await send(PUT, "PUT", "/bubbles/foo", { options: 0 });
-  expect(disabled.status).toBe(202);
-  expect(manager.disable).toHaveBeenCalledWith("foo");
-
-  const unknownHash = await send(PUT, "PUT", "/bubbles/foo", {
-    hash: "nope",
-    options: 3,
-  });
-  expect(unknownHash.status).toBe(404);
-});
-
-test("snapshot endpoints build, list and delete snapshots", async () => {
-  await writeEntry("foo.bubble.ts");
-  await writeEntry("broken.bubble.ts", "export default (;");
-
-  const routes = createControlRoutes({
-    manager,
-    logger,
-    sourceDir,
-    snapshotDir,
-  });
-  const { GET, POST, DELETE } = routes["/snapshots/*"];
-
-  const built = await send(POST, "POST", "/snapshots/foo");
-  const { hash, createdAt } = built.body;
-  expect(built.status).toBe(201);
-
-  const noEntry = await send(POST, "POST", "/snapshots/none");
-  expect(noEntry.status).toBe(404);
-
-  const brokenBuild = await send(POST, "POST", "/snapshots/broken");
-  expect(brokenBuild.status).toBe(422);
-
-  const activeStats = running(hash);
-  stats.set("foo", activeStats);
-  const listed = await send(GET, "GET", "/snapshots/foo");
-  expect(listed.body.snapshots).toEqual([{ hash, createdAt }]);
-
-  const withoutHash = await send(DELETE, "DELETE", "/snapshots/foo");
-  expect(withoutHash.status).toBe(400);
-
-  const deleteUrl = `/snapshots/foo?hash=${hash}`;
-  const deleteActive = await send(DELETE, "DELETE", deleteUrl);
-  expect(deleteActive.status).toBe(409);
-
-  stats.clear();
-  const deleted = await send(DELETE, "DELETE", deleteUrl);
-  expect(deleted.status).toBe(204);
-
-  const deletedAgain = await send(DELETE, "DELETE", deleteUrl);
-  expect(deletedAgain.status).toBe(404);
-});
-
 test("source endpoints list and inspect bubble entries", async () => {
   await writeEntry("foo.bubble.js");
   await writeEntry("foo.bubble.ts");
   await writeEntry("nested/bar.bubble.ts");
 
-  const routes = createControlRoutes({
-    manager,
-    logger,
-    sourceDir,
-    snapshotDir,
-  });
+  const routes = createRoutes();
   const { GET: list } = routes["/sources"];
   const { GET } = routes["/sources/*"];
 
@@ -193,4 +101,113 @@ test("source endpoints list and inspect bubble entries", async () => {
 
   const invalidName = await send(GET, "GET", "/sources/bad%20name");
   expect(invalidName.status).toBe(400);
+});
+
+test("bubble endpoints run, inspect, restart and remove bubbles", async () => {
+  await writeEntry("foo.bubble.ts");
+  const routes = createRoutes();
+  const { POST: build } = routes["/snapshots/*"];
+  const { GET: list } = routes["/bubbles"];
+  const { GET, PUT, POST, DELETE } = routes["/bubbles/*"];
+
+  const built = await send(build, "POST", "/snapshots/foo");
+  const { hash: snapshotHash } = built.body;
+
+  const notRunning = await send(GET, "GET", "/bubbles/foo");
+  expect(notRunning.status).toBe(404);
+
+  const restartStopped = await send(POST, "POST", "/bubbles/foo");
+  expect(restartStopped.status).toBe(404);
+
+  const removeStopped = await send(DELETE, "DELETE", "/bubbles/foo");
+  expect(removeStopped.status).toBe(404);
+
+  const withoutHash = await send(PUT, "PUT", "/bubbles/foo", {
+    routing: true,
+  });
+  expect(withoutHash.status).toBe(400);
+
+  const withoutRouting = await send(PUT, "PUT", "/bubbles/foo", {
+    snapshotHash,
+  });
+  expect(withoutRouting.status).toBe(400);
+
+  const unknownHash = await send(PUT, "PUT", "/bubbles/foo", {
+    snapshotHash: "nope",
+    routing: true,
+  });
+  expect(unknownHash.status).toBe(404);
+  expect(manager.sync).not.toHaveBeenCalled();
+
+  const started = await send(PUT, "PUT", "/bubbles/foo", {
+    snapshotHash,
+    routing: true,
+  });
+  const [syncedRecord] = manager.sync.mock.lastCall ?? [];
+  expect(started.status).toBe(202);
+  expect(syncedRecord).toMatchObject({
+    bubbleName: "foo",
+    snapshotHash,
+    routing: true,
+  });
+  expect(started.body).toEqual({
+    name: "foo",
+    route: "/foo",
+    state: "running",
+    snapshotHash,
+    createdAt: "2026-11-16T00:00:00.000Z",
+    routing: true,
+    routed: true,
+  });
+
+  const listed = await send(list, "GET", "/bubbles");
+  expect(listed.body.bubbles).toEqual([started.body]);
+
+  const restarted = await send(POST, "POST", "/bubbles/foo");
+  expect(restarted.status).toBe(202);
+  expect(manager.restart).toHaveBeenCalledWith("foo");
+
+  const removed = await send(DELETE, "DELETE", "/bubbles/foo");
+  expect(removed.status).toBe(204);
+  expect(manager.remove).toHaveBeenCalledWith("foo");
+
+  const listedAfterRemove = await send(list, "GET", "/bubbles");
+  expect(listedAfterRemove.body.bubbles).toEqual([]);
+});
+
+test("snapshot endpoints build, list and delete snapshots", async () => {
+  await writeEntry("foo.bubble.ts");
+  await writeEntry("broken.bubble.ts", "export default (;");
+
+  const routes = createRoutes();
+  const { GET, POST, DELETE } = routes["/snapshots/*"];
+
+  const built = await send(POST, "POST", "/snapshots/foo");
+  const { hash, createdAt } = built.body;
+  expect(built.status).toBe(201);
+
+  const noEntry = await send(POST, "POST", "/snapshots/none");
+  expect(noEntry.status).toBe(404);
+
+  const brokenBuild = await send(POST, "POST", "/snapshots/broken");
+  expect(brokenBuild.status).toBe(422);
+
+  const listed = await send(GET, "GET", "/snapshots/foo");
+  expect(listed.body.snapshots).toEqual([{ hash, createdAt }]);
+
+  const withoutHash = await send(DELETE, "DELETE", "/snapshots/foo");
+  expect(withoutHash.status).toBe(400);
+
+  const runningStats = running(hash, true);
+  stats.set("foo", runningStats);
+  const deleteUrl = `/snapshots/foo?hash=${hash}`;
+  const deleteRunning = await send(DELETE, "DELETE", deleteUrl);
+  expect(deleteRunning.status).toBe(409);
+
+  stats.clear();
+  const deleted = await send(DELETE, "DELETE", deleteUrl);
+  expect(deleted.status).toBe(204);
+
+  const deletedAgain = await send(DELETE, "DELETE", deleteUrl);
+  expect(deletedAgain.status).toBe(404);
 });
