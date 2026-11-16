@@ -13,15 +13,22 @@ import (
 
 func TestServeHTTP_RedirectsBareDirectoryPrefix(t *testing.T) {
 	manager := proxy.NewManager()
-	require.NoError(t, manager.SetRoutes([]routes.Entry{{RoutePath: "/docs/", SocketPath: "docs.sock"}}))
+	entries := []routes.Entry{{RoutePath: "/docs/", SocketPath: "docs.sock"}}
+	err := manager.SetRoutes(entries)
+	require.NoError(t, err)
 
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/docs?x=1", nil)
 	request.Header.Set("Connection", "Upgrade")
 	request.Header.Set("Upgrade", "websocket")
+
 	manager.ServeHTTP(recorder, request)
 
+	header := recorder.Header()
+	location := header.Get("Location")
+	connection := header.Get("Connection")
+
 	assert.Equal(t, http.StatusPermanentRedirect, recorder.Code)
-	assert.Equal(t, "/docs/?x=1", recorder.Header().Get("Location"))
-	assert.Equal(t, "close", recorder.Header().Get("Connection"))
+	assert.Equal(t, "/docs/?x=1", location)
+	assert.Equal(t, "close", connection)
 }
