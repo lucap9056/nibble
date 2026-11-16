@@ -1,20 +1,16 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { toRelativePosixPath } from "@/utils/path";
 import { SNAPSHOT_FILE_NAME, type Snapshot } from "./builder";
 
 export const listSnapshots = async (
-  sourceDir: string,
-  sourcePath: string,
+  bubbleName: string,
   snapshotRootDir: string,
 ): Promise<Snapshot[]> => {
-  const relativeSourcePath = toRelativePosixPath(sourceDir, sourcePath);
-  const snapshotDir = path.resolve(snapshotRootDir, relativeSourcePath);
+  const snapshotDir = path.join(snapshotRootDir, bubbleName);
   if (!existsSync(snapshotDir)) {
     return [];
   }
 
-  const entryPath = path.resolve(sourceDir, relativeSourcePath);
   const snapshotGlob = new Bun.Glob("*.js");
   const entries: Snapshot[] = [];
   for await (const fileName of snapshotGlob.scan(snapshotDir)) {
@@ -26,12 +22,7 @@ export const listSnapshots = async (
     const snapshotPath = path.join(snapshotDir, fileName);
     const createdAt = new Date(Number(timestamp));
 
-    entries.push({
-      sourcePath: entryPath,
-      snapshotPath,
-      snapshotHash,
-      createdAt,
-    });
+    entries.push({ bubbleName, snapshotPath, snapshotHash, createdAt });
   }
 
   return entries.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());

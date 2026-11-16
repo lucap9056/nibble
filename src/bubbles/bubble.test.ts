@@ -133,10 +133,9 @@ afterAll(() => {
 const setup = () => {
   const events: { id: string; socketPath: string; state: BubbleState }[] = [];
   let checked = 0;
-  const sourcePath = path.join(config.bubbleSourceDir, "test.ts");
   const snapshotPath = path.join(config.bubbleSnapshotDir, "test.js");
   const bubble = new Bubble(
-    sourcePath,
+    "test",
     {
       onStateChange: ({ id, socketPath }, state) => {
         events.push({ id, socketPath, state });

@@ -1,8 +1,7 @@
 import { Bubble, BubbleState } from "@/bubbles";
-import config from "@/config";
 import type { RouteEntry } from "@/router";
 import type { Logger } from "@/utils/logger";
-import { toRelativePosixPath, toRoutePath } from "@/utils/path";
+import { toRoutePath } from "@/utils/path";
 
 export enum BubbleOption {
   Enabled = 1 << 0,
@@ -10,7 +9,7 @@ export enum BubbleOption {
 }
 
 export type BubbleRecord = {
-  sourcePath: string;
+  bubbleName: string;
   snapshotPath: string;
   snapshotHash: string;
   options: number;
@@ -59,11 +58,11 @@ export class BubbleManager {
     }
 
     const routes: RouteEntry[] = [];
-    for (const [sourcePath, socketPath] of this.bubbleSockets) {
-      if (!this.routableBubbles.has(sourcePath)) {
+    for (const [bubbleName, socketPath] of this.bubbleSockets) {
+      if (!this.routableBubbles.has(bubbleName)) {
         continue;
       }
-      const routePath = toRoutePath(config.bubbleSourceDir, sourcePath);
+      const routePath = toRoutePath(bubbleName);
       routes.push({ routePath, socketPath });
     }
 
@@ -85,23 +84,19 @@ export class BubbleManager {
     if (this.closed) {
       return Promise.reject(new Error("BubbleManager is stopped"));
     }
-    const { sourcePath, snapshotPath, snapshotHash } = record;
+    const { bubbleName, snapshotPath, snapshotHash } = record;
     if (!canActivateBubble(record)) {
-      const existingSession = this.bubbleSessions.get(sourcePath);
+      const existingSession = this.bubbleSessions.get(bubbleName);
       if (existingSession) {
-        this.bubbleSessions.delete(sourcePath);
+        this.bubbleSessions.delete(bubbleName);
         existingSession.bubble.stop(false).catch((err) => {
-          const bubble = toRelativePosixPath(
-            config.bubbleSourceDir,
-            sourcePath,
-          );
-          this.logger.error("bubble stop failed", { bubble, err });
+          this.logger.error("bubble stop failed", { bubble: bubbleName, err });
         });
       }
       const wasRouted =
-        this.bubbleSockets.delete(sourcePath) &&
-        this.routableBubbles.has(sourcePath);
-      this.routableBubbles.delete(sourcePath);
+        this.bubbleSockets.delete(bubbleName) &&
+        this.routableBubbles.has(bubbleName);
+      this.routableBubbles.delete(bubbleName);
       if (wasRouted) {
         this.flushRoutes();
       }
@@ -109,49 +104,49 @@ export class BubbleManager {
     }
 
     const routable = canRouteBubble(record);
-    if (routable !== this.routableBubbles.has(sourcePath)) {
+    if (routable !== this.routableBubbles.has(bubbleName)) {
       if (routable) {
-        this.routableBubbles.add(sourcePath);
+        this.routableBubbles.add(bubbleName);
       } else {
-        this.routableBubbles.delete(sourcePath);
+        this.routableBubbles.delete(bubbleName);
       }
-      if (this.bubbleSockets.has(sourcePath)) {
+      if (this.bubbleSockets.has(bubbleName)) {
         this.flushRoutes();
       }
     }
 
     const createdAt = Date.now();
-    const existingSession = this.bubbleSessions.get(sourcePath);
+    const existingSession = this.bubbleSessions.get(bubbleName);
     if (existingSession) {
       const { bubble, snapshotHash: activeHash } = existingSession;
       if (snapshotHash === activeHash && bubble.state === BubbleState.Running) {
         return Promise.resolve();
       }
       const started = bubble.start(snapshotPath, createdAt);
-      this.bubbleSessions.set(sourcePath, { createdAt, bubble, snapshotHash });
+      this.bubbleSessions.set(bubbleName, { createdAt, bubble, snapshotHash });
       return started;
     }
 
     const bubble = new Bubble(
-      sourcePath,
+      bubbleName,
       {
         onStateChange: ({ socketPath }, state) => {
-          if (this.bubbleSessions.get(sourcePath)?.bubble !== bubble) {
+          if (this.bubbleSessions.get(bubbleName)?.bubble !== bubble) {
             return;
           }
           switch (state) {
             case BubbleState.Running:
-              if (this.bubbleSockets.get(sourcePath) === socketPath) {
+              if (this.bubbleSockets.get(bubbleName) === socketPath) {
                 return;
               }
-              this.bubbleSockets.set(sourcePath, socketPath);
+              this.bubbleSockets.set(bubbleName, socketPath);
               break;
             default:
-              if (!this.bubbleSockets.delete(sourcePath)) {
+              if (!this.bubbleSockets.delete(bubbleName)) {
                 return;
               }
           }
-          if (this.routableBubbles.has(sourcePath)) {
+          if (this.routableBubbles.has(bubbleName)) {
             this.flushRoutes();
           }
         },
@@ -159,7 +154,7 @@ export class BubbleManager {
       this.logger,
     );
 
-    this.bubbleSessions.set(sourcePath, { bubble, createdAt, snapshotHash });
+    this.bubbleSessions.set(bubbleName, { bubble, createdAt, snapshotHash });
 
     return bubble.start(snapshotPath, createdAt);
   }

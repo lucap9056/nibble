@@ -3,20 +3,20 @@ import { listSnapshots } from "./viewer";
 
 export const resolveSnapshot = async (
   sourceDir: string,
-  sourcePath: string,
+  bubbleName: string,
   snapshotDir: string,
   snapshotHash?: string,
 ): Promise<Snapshot> => {
   if (snapshotHash === undefined) {
-    return buildSnapshot(sourceDir, sourcePath, snapshotDir);
+    return buildSnapshot(sourceDir, bubbleName, snapshotDir);
   }
 
-  const snapshots = await listSnapshots(sourceDir, sourcePath, snapshotDir);
+  const snapshots = await listSnapshots(bubbleName, snapshotDir);
   const snapshot = snapshots.find(
     (candidate) => candidate.snapshotHash === snapshotHash,
   );
   if (!snapshot) {
-    throw new Error(`Snapshot not found: ${sourcePath}@${snapshotHash}`);
+    throw new Error(`Snapshot not found: ${bubbleName}@${snapshotHash}`);
   }
 
   const content = await Bun.file(snapshot.snapshotPath).text();

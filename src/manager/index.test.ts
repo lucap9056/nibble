@@ -1,8 +1,6 @@
 import { beforeEach, expect, mock, spyOn, test } from "bun:test";
-import path from "node:path";
 import type { BubbleHandlers } from "@/bubbles/bubble";
 import { BubbleState } from "@/bubbles/bubble-state";
-import config from "@/config";
 import type { BubbleRecord } from "@/manager";
 import type { RouteEntry } from "@/router";
 import type { LogFields, Logger } from "@/utils/logger";
@@ -15,9 +13,9 @@ class FakeBubble {
   public static instances = new Map<string, FakeBubble>();
   private readonly handlers: BubbleHandlers;
 
-  constructor(sourcePath: string, handlers: BubbleHandlers) {
+  constructor(bubbleName: string, handlers: BubbleHandlers) {
     this.handlers = handlers;
-    FakeBubble.instances.set(sourcePath, this);
+    FakeBubble.instances.set(bubbleName, this);
   }
 
   public start() {
@@ -42,26 +40,26 @@ mock.module("@/bubbles", () => ({
 const { BubbleManager, BubbleOption } = await import("@/manager");
 const { Enabled, Routing } = BubbleOption;
 
-const alphaPath = path.join(config.bubbleSourceDir, "alpha.ts");
-const betaPath = path.join(config.bubbleSourceDir, "beta.ts");
-const gammaPath = path.join(config.bubbleSourceDir, "gamma.ts");
-const alphaRoutePath = toRoutePath(config.bubbleSourceDir, alphaPath);
-const betaRoutePath = toRoutePath(config.bubbleSourceDir, betaPath);
+const alphaName = "alpha";
+const betaName = "beta";
+const gammaName = "gamma";
+const alphaRoutePath = toRoutePath(alphaName);
+const betaRoutePath = toRoutePath(betaName);
 
 const alpha: BubbleRecord = {
-  sourcePath: alphaPath,
+  bubbleName: alphaName,
   snapshotPath: "/alpha.js",
   snapshotHash: "hash",
   options: Enabled | Routing,
 };
 const beta: BubbleRecord = {
-  sourcePath: betaPath,
+  bubbleName: betaName,
   snapshotPath: "/beta.js",
   snapshotHash: "hash",
   options: Enabled | Routing,
 };
 const gamma: BubbleRecord = {
-  sourcePath: gammaPath,
+  bubbleName: gammaName,
   snapshotPath: "/gamma.js",
   snapshotHash: "hash",
   options: Enabled | Routing,
@@ -101,7 +99,7 @@ beforeEach(() => {
 test("sends routes once for a single change", async () => {
   const manager = new BubbleManager({ onRoutesChange }, logger);
   manager.sync(alpha);
-  const alphaBubble = FakeBubble.instances.get(alphaPath);
+  const alphaBubble = FakeBubble.instances.get(alphaName);
 
   alphaBubble?.emit(Running, "/alpha-1.sock");
   await Bun.sleep(0);
@@ -117,8 +115,8 @@ test("merges changes while in flight into one trailing send", async () => {
   const manager = new BubbleManager({ onRoutesChange }, logger);
   manager.sync(alpha);
   manager.sync(beta);
-  const alphaBubble = FakeBubble.instances.get(alphaPath);
-  const betaBubble = FakeBubble.instances.get(betaPath);
+  const alphaBubble = FakeBubble.instances.get(alphaName);
+  const betaBubble = FakeBubble.instances.get(betaName);
 
   alphaBubble?.emit(Running, "/alpha-1.sock");
   betaBubble?.emit(Running, "/beta-1.sock");
@@ -144,8 +142,8 @@ test("keeps sending after the handler rejects", async () => {
   const manager = new BubbleManager({ onRoutesChange }, logger);
   manager.sync(alpha);
   manager.sync(beta);
-  const alphaBubble = FakeBubble.instances.get(alphaPath);
-  const betaBubble = FakeBubble.instances.get(betaPath);
+  const alphaBubble = FakeBubble.instances.get(alphaName);
+  const betaBubble = FakeBubble.instances.get(betaName);
 
   alphaBubble?.emit(Running, "/alpha-1.sock");
   betaBubble?.emit(Running, "/beta-1.sock");
@@ -185,7 +183,7 @@ test("recovers when the handler throws synchronously", async () => {
     logger,
   );
   manager.sync(alpha);
-  const alphaBubble = FakeBubble.instances.get(alphaPath);
+  const alphaBubble = FakeBubble.instances.get(alphaName);
 
   alphaBubble?.emit(Running, "/alpha-1.sock");
   await Bun.sleep(0);
@@ -205,9 +203,9 @@ test("skips changes that leave the route table unchanged", async () => {
   manager.sync(alpha);
   manager.sync(unroutedBeta);
   manager.sync(gamma);
-  const alphaBubble = FakeBubble.instances.get(alphaPath);
-  const betaBubble = FakeBubble.instances.get(betaPath);
-  const gammaBubble = FakeBubble.instances.get(gammaPath);
+  const alphaBubble = FakeBubble.instances.get(alphaName);
+  const betaBubble = FakeBubble.instances.get(betaName);
+  const gammaBubble = FakeBubble.instances.get(gammaName);
 
   alphaBubble?.emit(Running, "/alpha-1.sock");
   await Bun.sleep(0);
@@ -225,7 +223,7 @@ test("skips changes that leave the route table unchanged", async () => {
 test("sends routes when routing is toggled on a running bubble", async () => {
   const manager = new BubbleManager({ onRoutesChange }, logger);
   manager.sync(unroutedAlpha);
-  const alphaBubble = FakeBubble.instances.get(alphaPath);
+  const alphaBubble = FakeBubble.instances.get(alphaName);
   alphaBubble?.emit(Running, "/alpha-1.sock");
   await Bun.sleep(0);
   expect(calls).toHaveLength(0);
@@ -257,7 +255,7 @@ test("removes routes on disable and ignores the stopped bubble after re-enable",
   const disabledAlpha: BubbleRecord = { ...alpha, options: 0 };
   const manager = new BubbleManager({ onRoutesChange }, logger);
   manager.sync(alpha);
-  const oldBubble = FakeBubble.instances.get(alphaPath);
+  const oldBubble = FakeBubble.instances.get(alphaName);
   oldBubble?.emit(Running, "/alpha-1.sock");
   await Bun.sleep(0);
   calls[0]?.settle.resolve();
@@ -271,7 +269,7 @@ test("removes routes on disable and ignores the stopped bubble after re-enable",
   await Bun.sleep(0);
 
   manager.sync(alpha);
-  const newBubble = FakeBubble.instances.get(alphaPath);
+  const newBubble = FakeBubble.instances.get(alphaName);
   newBubble?.emit(Running, "/alpha-2.sock");
   await Bun.sleep(0);
   calls[2]?.settle.resolve();
@@ -290,7 +288,7 @@ test("removes routes on disable and ignores the stopped bubble after re-enable",
 test("stop halts bubbles, suppresses route sends and rejects further syncs", async () => {
   const manager = new BubbleManager({ onRoutesChange }, logger);
   manager.sync(alpha);
-  const alphaBubble = FakeBubble.instances.get(alphaPath);
+  const alphaBubble = FakeBubble.instances.get(alphaName);
   const stopSpy = spyOn(alphaBubble as FakeBubble, "stop");
 
   await manager.stop(false);

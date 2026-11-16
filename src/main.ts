@@ -5,6 +5,7 @@ import { BubbleManager } from "@/manager";
 import { RouterProcess } from "@/router";
 import { resolveSnapshot } from "@/snapshots";
 import { createLogger } from "@/utils/logger";
+import { toBubbleName } from "@/utils/path";
 
 const logger = createLogger("engine");
 
@@ -26,9 +27,12 @@ await Promise.all(
   bootstrap.bubbles
     .filter(({ options }) => options !== 0)
     .map(({ path, hash, options }) =>
-      resolveSnapshot(sourceDir, path, snapshotDir, hash)
-        .then(({ sourcePath, snapshotPath, snapshotHash }) =>
-          manager.sync({ sourcePath, snapshotPath, snapshotHash, options }),
+      Promise.try(() => toBubbleName(sourceDir, path))
+        .then((bubbleName) =>
+          resolveSnapshot(sourceDir, bubbleName, snapshotDir, hash),
+        )
+        .then(({ bubbleName, snapshotPath, snapshotHash }) =>
+          manager.sync({ bubbleName, snapshotPath, snapshotHash, options }),
         )
         .catch((err) => {
           const bubble = relative(sourceDir, path).split(sep).join("/");

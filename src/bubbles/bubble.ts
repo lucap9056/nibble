@@ -1,7 +1,6 @@
 import path from "node:path";
 import config from "@/config";
 import type { Logger } from "@/utils/logger";
-import { SOURCE_EXTENSION, toRelativePosixPath } from "@/utils/path";
 import { BubbleState } from "./bubble-state";
 import { BubbleWorker } from "./bubble-worker";
 import { BubbleSocketLink } from "./socket-link";
@@ -22,19 +21,13 @@ export class Bubble {
   private currentWorker?: BubbleWorker;
 
   constructor(
-    sourcePath: string,
+    bubbleName: string,
     eventHandlers: BubbleHandlers,
     logger: Logger,
   ) {
     this.eventHandlers = eventHandlers;
-
-    const relativeSourcePath = toRelativePosixPath(
-      config.bubbleSourceDir,
-      sourcePath,
-    );
-    this.logger = logger.with({ bubble: relativeSourcePath });
-    const socketName = relativeSourcePath.replace(SOURCE_EXTENSION, "");
-    const socketPath = `${path.join(config.bubbleSocketDir, socketName)}.sock`;
+    this.logger = logger.with({ bubble: bubbleName });
+    const socketPath = `${path.join(config.bubbleSocketDir, bubbleName)}.sock`;
     this.socketDir = path.dirname(socketPath);
     this.link = new BubbleSocketLink(socketPath);
   }

@@ -3,7 +3,7 @@ import { mkdir, rename } from "node:fs/promises";
 import { isBuiltin } from "node:module";
 import path from "node:path";
 import type { BunPlugin } from "bun";
-import { toRelativePosixPath } from "@/utils/path";
+import { resolveBubbleEntry } from "@/utils/path";
 import { encodeDependencies } from "./dependencies";
 
 const NIBBLE_PACKAGE = /^@lucap9056\/nibble(\/|$)/;
@@ -20,7 +20,7 @@ export const hashSnapshot = (content: string): string =>
     .digest("hex");
 
 export interface Snapshot {
-  sourcePath: string;
+  bubbleName: string;
   snapshotPath: string;
   snapshotHash: string;
   createdAt: Date;
@@ -72,12 +72,11 @@ const writeAtomic = async (filePath: string, content: string) => {
 
 export const buildSnapshot = async (
   sourceDir: string,
-  sourcePath: string,
+  bubbleName: string,
   snapshotRootDir: string,
 ): Promise<Snapshot> => {
-  const relativeSourcePath = toRelativePosixPath(sourceDir, sourcePath);
-  const snapshotDir = path.resolve(snapshotRootDir, relativeSourcePath);
-  const entryPath = path.resolve(sourceDir, relativeSourcePath);
+  const entryPath = await resolveBubbleEntry(sourceDir, bubbleName);
+  const snapshotDir = path.join(snapshotRootDir, bubbleName);
   const entryDir = JSON.stringify(path.dirname(entryPath));
   const packageIds = new Set<string>();
   const result = await Bun.build({
@@ -97,7 +96,7 @@ export const buildSnapshot = async (
   if (!result.success) {
     throw new AggregateError(
       result.logs,
-      `Failed to build snapshot: ${sourcePath}`,
+      `Failed to build snapshot: ${entryPath}`,
     );
   }
 
@@ -106,7 +105,7 @@ export const buildSnapshot = async (
     ({ kind }) => kind === "sourcemap",
   );
   if (!entryOutput || !sourcemapOutput) {
-    throw new Error(`Snapshot build produced no output: ${sourcePath}`);
+    throw new Error(`Snapshot build produced no output: ${entryPath}`);
   }
 
   const code = (await entryOutput.text())
@@ -140,7 +139,7 @@ export const buildSnapshot = async (
       const createdAt = new Date(Number(timestamp));
 
       return {
-        sourcePath: entryPath,
+        bubbleName,
         snapshotPath: existingPath,
         snapshotHash,
         createdAt,
@@ -152,5 +151,5 @@ export const buildSnapshot = async (
   const snapshotFileName = `${createdAt.getTime()}-${snapshotHash}.js`;
   const snapshotPath = path.join(snapshotDir, snapshotFileName);
   await writeAtomic(snapshotPath, content);
-  return { sourcePath: entryPath, snapshotPath, snapshotHash, createdAt };
+  return { bubbleName, snapshotPath, snapshotHash, createdAt };
 };
