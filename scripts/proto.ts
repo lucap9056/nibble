@@ -2,10 +2,9 @@ import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 
 const rootPath = path.resolve(import.meta.dir, "..");
-const goModulePath = path.join(rootPath, "router");
+const goModulePath = path.join(rootPath, "nibble-router");
 const goOutPath = path.join(goModulePath, "internal/routerpb");
-const tsOutPath = path.join(rootPath, "nibble-engine/src/router/pb");
-const tsGeneratedPath = path.join(tsOutPath, "router");
+const tsOutPath = path.join(rootPath, "nibble-engine/src/router/pb/router");
 
 const TS_PROTO_OPTIONS = [
   "esModuleInterop=true",
@@ -24,12 +23,12 @@ const resolvePlugin = (name: string) => {
   return `--plugin=${name}=${pluginPath}`;
 };
 
-const protoFiles = [
-  ...new Bun.Glob("router/**/*.proto").scanSync(rootPath),
-].map((file) => file.split(path.sep).join(path.posix.sep));
+const protoFiles = [...new Bun.Glob("**/*.proto").scanSync(goModulePath)].map(
+  (file) => file.split(path.sep).join(path.posix.sep),
+);
 
 await Promise.all(
-  [goOutPath, tsGeneratedPath].map(async (outPath) => {
+  [goOutPath, tsOutPath].map(async (outPath) => {
     await rm(outPath, { recursive: true, force: true });
     await mkdir(outPath, { recursive: true });
   }),
@@ -40,14 +39,14 @@ const protoc = Bun.spawnSync(
     "protoc",
     resolvePlugin("protoc-gen-go"),
     resolvePlugin("protoc-gen-ts_proto"),
-    `--proto_path=${rootPath}`,
+    `--proto_path=${goModulePath}`,
     `--go_out=${goModulePath}`,
     "--go_opt=module=router",
     `--ts_proto_out=${tsOutPath}`,
     `--ts_proto_opt=${TS_PROTO_OPTIONS.join(",")}`,
     ...protoFiles,
   ],
-  { cwd: rootPath, stdout: "inherit", stderr: "inherit" },
+  { cwd: goModulePath, stdout: "inherit", stderr: "inherit" },
 );
 
 if (!protoc.success) {

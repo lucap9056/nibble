@@ -2,7 +2,7 @@ import path from "node:path";
 import { ROUTER_BINARY_NAME } from "../nibble-engine/src/config";
 
 const rootPath = path.resolve(import.meta.dir, "..");
-const routerModulePath = path.join(rootPath, "router");
+const routerModulePath = path.join(rootPath, "nibble-router");
 
 export const buildRouter = (outfile: string) => {
   const result = Bun.spawnSync(

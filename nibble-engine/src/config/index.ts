@@ -18,7 +18,7 @@ const rootPath = Bun.isStandaloneExecutable
 
 const defaultRouterBinaryPath = Bun.isStandaloneExecutable
   ? path.join(rootPath, ROUTER_BINARY_NAME)
-  : path.join(rootPath, "router/bin", ROUTER_BINARY_NAME);
+  : path.join(rootPath, "nibble-router/bin", ROUTER_BINARY_NAME);
 
 const config: Config = {
   bubbleSourceDir: path.resolve(
