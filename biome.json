@@ -7,7 +7,7 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "includes": ["**/src/**/*", "./scripts/**/*", "!**/src/router/pb"]
+    "includes": ["**/src/**/*", "scripts/**/*", "!**/src/router/pb"]
   },
   "formatter": {
     "enabled": true,
@@ -41,7 +41,7 @@
   },
   "overrides": [
     {
-      "includes": ["src/**", "!src/test.ts"],
+      "includes": ["nibble-engine/src/**", "nibble-sdk/src/**"],
       "linter": {
         "rules": {
           "suspicious": {
@@ -51,7 +51,7 @@
       }
     },
     {
-      "includes": ["src/control/**"],
+      "includes": ["nibble-engine/src/control/**"],
       "linter": {
         "rules": {
           "style": {

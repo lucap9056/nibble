@@ -4,7 +4,7 @@ import path from "node:path";
 const rootPath = path.resolve(import.meta.dir, "..");
 const goModulePath = path.join(rootPath, "router");
 const goOutPath = path.join(goModulePath, "internal/routerpb");
-const tsOutPath = path.join(rootPath, "src/router/pb");
+const tsOutPath = path.join(rootPath, "nibble-engine/src/router/pb");
 const tsGeneratedPath = path.join(tsOutPath, "router");
 
 const TS_PROTO_OPTIONS = [

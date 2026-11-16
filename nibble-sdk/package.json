@@ -1,0 +1,10 @@
+{
+  "name": "@lucap9056/nibble",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/core/index.ts",
+    "./cors": "./src/cors/index.ts"
+  },
+  "files": ["src"]
+}

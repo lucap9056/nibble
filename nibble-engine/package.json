@@ -1,0 +1,15 @@
+{
+  "name": "@lucap9056/nibble-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/main.ts"
+  },
+  "dependencies": {
+    "@lucap9056/nibble": "workspace:*"
+  },
+  "devDependencies": {
+    "@bufbuild/protobuf": "2.12.1"
+  }
+}

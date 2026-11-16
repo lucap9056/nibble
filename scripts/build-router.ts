@@ -1,5 +1,5 @@
 import path from "node:path";
-import { ROUTER_BINARY_NAME } from "../src/config";
+import { ROUTER_BINARY_NAME } from "../nibble-engine/src/config";
 
 const rootPath = path.resolve(import.meta.dir, "..");
 const routerModulePath = path.join(rootPath, "router");

@@ -14,7 +14,7 @@ export const ROUTER_BINARY_NAME =
 
 const rootPath = Bun.isStandaloneExecutable
   ? path.dirname(process.execPath)
-  : path.resolve(import.meta.dir, "../..");
+  : path.resolve(import.meta.dir, "../../..");
 
 const defaultRouterBinaryPath = Bun.isStandaloneExecutable
   ? path.join(rootPath, ROUTER_BINARY_NAME)
