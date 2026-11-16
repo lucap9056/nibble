@@ -16,9 +16,18 @@ export type BubbleRecord = {
 };
 
 interface ActiveBubbleSession {
+  snapshotPath: string;
   snapshotHash: string;
   createdAt: number;
   bubble: Bubble;
+}
+
+export interface BubbleStats {
+  state: BubbleState;
+  snapshotHash: string;
+  createdAt: number;
+  routing: boolean;
+  routed: boolean;
 }
 
 export interface BubbleManagerHandlers {
@@ -86,20 +95,7 @@ export class BubbleManager {
     }
     const { bubbleName, snapshotPath, snapshotHash } = record;
     if (!canActivateBubble(record)) {
-      const existingSession = this.bubbleSessions.get(bubbleName);
-      if (existingSession) {
-        this.bubbleSessions.delete(bubbleName);
-        existingSession.bubble.stop(false).catch((err) => {
-          this.logger.error("bubble stop failed", { bubble: bubbleName, err });
-        });
-      }
-      const wasRouted =
-        this.bubbleSockets.delete(bubbleName) &&
-        this.routableBubbles.has(bubbleName);
-      this.routableBubbles.delete(bubbleName);
-      if (wasRouted) {
-        this.flushRoutes();
-      }
+      this.disable(bubbleName);
       return Promise.resolve();
     }
 
@@ -123,7 +119,12 @@ export class BubbleManager {
         return Promise.resolve();
       }
       const started = bubble.start(snapshotPath, createdAt);
-      this.bubbleSessions.set(bubbleName, { createdAt, bubble, snapshotHash });
+      this.bubbleSessions.set(bubbleName, {
+        createdAt,
+        bubble,
+        snapshotPath,
+        snapshotHash,
+      });
       return started;
     }
 
@@ -154,9 +155,67 @@ export class BubbleManager {
       this.logger,
     );
 
-    this.bubbleSessions.set(bubbleName, { bubble, createdAt, snapshotHash });
+    this.bubbleSessions.set(bubbleName, {
+      bubble,
+      createdAt,
+      snapshotPath,
+      snapshotHash,
+    });
 
     return bubble.start(snapshotPath, createdAt);
+  }
+
+  public disable(bubbleName: string): void {
+    const existingSession = this.bubbleSessions.get(bubbleName);
+    if (existingSession) {
+      this.bubbleSessions.delete(bubbleName);
+      existingSession.bubble.stop(false).catch((err) => {
+        this.logger.error("bubble stop failed", { bubble: bubbleName, err });
+      });
+    }
+
+    const wasRouted =
+      this.bubbleSockets.delete(bubbleName) &&
+      this.routableBubbles.has(bubbleName);
+    this.routableBubbles.delete(bubbleName);
+    if (wasRouted) {
+      this.flushRoutes();
+    }
+  }
+
+  public restart(bubbleName: string): Promise<void> {
+    if (this.closed) {
+      return Promise.reject(new Error("BubbleManager is stopped"));
+    }
+
+    const session = this.bubbleSessions.get(bubbleName);
+    if (!session) {
+      return Promise.reject(new Error(`Bubble is not active: ${bubbleName}`));
+    }
+
+    const createdAt = Date.now();
+    const started = session.bubble.start(session.snapshotPath, createdAt);
+    this.bubbleSessions.set(bubbleName, { ...session, createdAt });
+
+    return started;
+  }
+
+  public stats(): Map<string, BubbleStats> {
+    const stats = new Map<string, BubbleStats>();
+
+    for (const [bubbleName, session] of this.bubbleSessions) {
+      const routing = this.routableBubbles.has(bubbleName);
+      const routed = routing && this.bubbleSockets.has(bubbleName);
+      stats.set(bubbleName, {
+        state: session.bubble.state,
+        snapshotHash: session.snapshotHash,
+        createdAt: session.createdAt,
+        routing,
+        routed,
+      });
+    }
+
+    return stats;
   }
 
   public async stop(force: boolean): Promise<void> {

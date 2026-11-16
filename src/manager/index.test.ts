@@ -12,13 +12,14 @@ const ROUTES_FAILED = "set routes failed";
 class FakeBubble {
   public static instances = new Map<string, FakeBubble>();
   private readonly handlers: BubbleHandlers;
+  public state = BubbleState.Idle;
 
   constructor(bubbleName: string, handlers: BubbleHandlers) {
     this.handlers = handlers;
     FakeBubble.instances.set(bubbleName, this);
   }
 
-  public start() {
+  public start(_snapshotPath: string, _createdAt: number) {
     return Promise.resolve();
   }
 
@@ -27,6 +28,7 @@ class FakeBubble {
   }
 
   public emit(state: BubbleState, socketPath = "") {
+    this.state = state;
     this.handlers.onStateChange({ id: "", socketPath }, state);
   }
 }
@@ -298,4 +300,65 @@ test("stop halts bubbles, suppresses route sends and rejects further syncs", asy
   await Bun.sleep(0);
   expect(calls).toHaveLength(0);
   await expect(manager.sync(beta)).rejects.toThrow("BubbleManager is stopped");
+});
+
+test("stats reflects state, snapshot and routing of active bubbles", () => {
+  const manager = new BubbleManager({ onRoutesChange }, logger);
+  manager.sync(alpha);
+  manager.sync({ ...unroutedBeta, snapshotHash: "beta-hash" });
+  const alphaBubble = FakeBubble.instances.get(alphaName);
+  const betaBubble = FakeBubble.instances.get(betaName);
+
+  const idleStats = manager.stats();
+  expect(idleStats.get(alphaName)).toMatchObject({
+    state: BubbleState.Idle,
+    snapshotHash: "hash",
+    routing: true,
+    routed: false,
+  });
+
+  alphaBubble?.emit(Running, "/alpha-1.sock");
+  betaBubble?.emit(Running, "/beta-1.sock");
+  const runningStats = manager.stats();
+  expect(runningStats.get(alphaName)).toMatchObject({
+    state: Running,
+    routing: true,
+    routed: true,
+  });
+  expect(runningStats.get(betaName)).toMatchObject({
+    state: Running,
+    snapshotHash: "beta-hash",
+    routing: false,
+    routed: false,
+  });
+
+  alphaBubble?.emit(Stopping);
+  const stoppingStats = manager.stats();
+  expect(stoppingStats.get(alphaName)).toMatchObject({
+    state: Stopping,
+    routed: false,
+  });
+
+  manager.sync({ ...alpha, options: 0 });
+  const disabledStats = manager.stats();
+  expect(disabledStats.has(alphaName)).toBe(false);
+});
+
+test("restart reuses the active snapshot and disable removes the bubble", async () => {
+  const manager = new BubbleManager({ onRoutesChange }, logger);
+
+  const restartInactive = manager.restart(alphaName);
+  await expect(restartInactive).rejects.toThrow("not active");
+
+  manager.sync(alpha);
+  const alphaBubble = FakeBubble.instances.get(alphaName) as FakeBubble;
+  const startSpy = spyOn(alphaBubble, "start");
+
+  await manager.restart(alphaName);
+  const [restartedSnapshotPath] = startSpy.mock.lastCall ?? [];
+  expect(restartedSnapshotPath).toBe(alpha.snapshotPath);
+
+  manager.disable(alphaName);
+  const disabledStats = manager.stats();
+  expect(disabledStats.has(alphaName)).toBe(false);
 });
