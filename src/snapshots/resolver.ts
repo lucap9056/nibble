@@ -1,4 +1,5 @@
 import { buildSnapshot, hashSnapshot, type Snapshot } from "./builder";
+import { SnapshotNotFoundError } from "./errors";
 import { listSnapshots } from "./viewer";
 
 export const resolveSnapshot = async (
@@ -16,7 +17,7 @@ export const resolveSnapshot = async (
     (candidate) => candidate.snapshotHash === snapshotHash,
   );
   if (!snapshot) {
-    throw new Error(`Snapshot not found: ${bubbleName}@${snapshotHash}`);
+    throw new SnapshotNotFoundError(bubbleName, snapshotHash);
   }
 
   const content = await Bun.file(snapshot.snapshotPath).text();
