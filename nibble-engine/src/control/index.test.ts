@@ -161,3 +161,36 @@ test("snapshot endpoints build, list and delete snapshots", async () => {
   const deletedAgain = await send(DELETE, "DELETE", deleteUrl);
   expect(deletedAgain.status).toBe(404);
 });
+
+test("source endpoints list and inspect bubble entries", async () => {
+  await writeEntry("foo.bubble.js");
+  await writeEntry("foo.bubble.ts");
+  await writeEntry("nested/bar.bubble.ts");
+
+  const routes = createControlRoutes({
+    manager,
+    logger,
+    sourceDir,
+    snapshotDir,
+  });
+  const { GET: list } = routes["/sources"];
+  const { GET } = routes["/sources/*"];
+
+  const listed = await send(list, "GET", "/sources");
+  expect(listed.body.sources).toEqual([
+    { name: "foo", entry: "foo.bubble.ts" },
+    { name: "nested/bar", entry: "nested/bar.bubble.ts" },
+  ]);
+
+  const nested = await send(GET, "GET", "/sources/nested/bar");
+  expect(nested.body).toEqual({
+    name: "nested/bar",
+    entry: "nested/bar.bubble.ts",
+  });
+
+  const missing = await send(GET, "GET", "/sources/missing");
+  expect(missing.status).toBe(404);
+
+  const invalidName = await send(GET, "GET", "/sources/bad%20name");
+  expect(invalidName.status).toBe(400);
+});
