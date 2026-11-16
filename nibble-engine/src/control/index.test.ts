@@ -145,7 +145,7 @@ test("snapshot endpoints build, list and delete snapshots", async () => {
   const activeStats = running(hash);
   stats.set("foo", activeStats);
   const listed = await send(GET, "GET", "/snapshots/foo");
-  expect(listed.body.snapshots).toEqual([{ hash, createdAt, active: true }]);
+  expect(listed.body.snapshots).toEqual([{ hash, createdAt }]);
 
   const withoutHash = await send(DELETE, "DELETE", "/snapshots/foo");
   expect(withoutHash.status).toBe(400);

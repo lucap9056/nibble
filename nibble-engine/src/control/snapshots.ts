@@ -16,14 +16,11 @@ export const createSnapshotRoutes = (
   "/snapshots/*": {
     GET: handle(async (req) => {
       const bubbleName = parseBubbleName(req, SNAPSHOT_PREFIX);
-      const activeHash = manager.stats().get(bubbleName)?.snapshotHash;
       const snapshots = await listSnapshots(bubbleName, snapshotDir);
 
       const snapshotViews = snapshots.map(({ snapshotHash, createdAt }) => {
         const createdAtIso = createdAt.toISOString();
-        const active = snapshotHash === activeHash;
-
-        return { hash: snapshotHash, createdAt: createdAtIso, active };
+        return { hash: snapshotHash, createdAt: createdAtIso };
       });
 
       return Response.json({ snapshots: snapshotViews });
