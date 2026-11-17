@@ -6,6 +6,7 @@
   "scripts": {
     "start": "bun run --cwd nibble-engine start",
     "build": "bun scripts/build.ts",
+    "build:engine": "bun scripts/build-engine.ts",
     "build:router": "bun scripts/build-router.ts",
     "build:daemon": "bun scripts/build-daemon.ts",
     "test:integration": "bun run build && bun test ./tests/daemon.integration.ts",

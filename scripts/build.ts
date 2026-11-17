@@ -1,36 +1,17 @@
 import path from "node:path";
 import { ROUTER_BINARY_NAME } from "@lucap9056/nibble-engine/config";
 import { buildDaemon, DAEMON_BINARY_NAME } from "./build-daemon";
+import { buildEngine } from "./build-engine";
 import { buildRouter } from "./build-router";
 
-const rootPath = path.resolve(import.meta.dir, "..");
-const enginePath = path.join(rootPath, "nibble-engine");
-const srcPath = path.join(enginePath, "src");
+const distPath = path.resolve(import.meta.dir, "..", "dist");
 
-const workerEntryPath = path.join(srcPath, "bubble.worker.ts");
+const engineOutfile = path.join(distPath, "nibble");
+const engineOutputs = await buildEngine(engineOutfile);
+console.log(engineOutputs.join("\n"));
 
-const result = await Bun.build({
-  entrypoints: [path.join(srcPath, "main.ts"), workerEntryPath],
-  files: {
-    [workerEntryPath]: `import "./bubbles/bubble.worker.ts";`,
-  },
-  root: srcPath,
-  compile: {
-    outfile: path.join(rootPath, "dist/nibble"),
-    autoloadPackageJson: true,
-  },
-});
+const routerOutfile = path.join(distPath, ROUTER_BINARY_NAME);
+console.log(buildRouter(routerOutfile));
 
-if (!result.success) {
-  for (const log of result.logs) {
-    console.error(log);
-  }
-  process.exit(1);
-}
-
-for (const output of result.outputs) {
-  console.log(output.path);
-}
-
-console.log(buildRouter(path.join(rootPath, "dist", ROUTER_BINARY_NAME)));
-console.log(buildDaemon(path.join(rootPath, "dist", DAEMON_BINARY_NAME)));
+const daemonOutfile = path.join(distPath, DAEMON_BINARY_NAME);
+console.log(buildDaemon(daemonOutfile));
