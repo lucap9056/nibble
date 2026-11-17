@@ -1,5 +1,6 @@
 import path from "node:path";
 import { ROUTER_BINARY_NAME } from "@lucap9056/nibble-engine/config";
+import { buildDaemon, DAEMON_BINARY_NAME } from "./build-daemon";
 import { buildRouter } from "./build-router";
 
 const rootPath = path.resolve(import.meta.dir, "..");
@@ -32,3 +33,4 @@ for (const output of result.outputs) {
 }
 
 console.log(buildRouter(path.join(rootPath, "dist", ROUTER_BINARY_NAME)));
+console.log(buildDaemon(path.join(rootPath, "dist", DAEMON_BINARY_NAME)));
