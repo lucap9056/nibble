@@ -19,18 +19,22 @@ const run = (command: string[], cwd: string) => {
   }
 };
 
-export const buildDaemon = (outfile: string) => {
-  run(["bun", "install", "--frozen-lockfile"], webPath);
-  run(["bun", "run", "build"], webPath);
+export const buildDaemon = (outfile: string, noweb = false) => {
+  if (!noweb) {
+    run(["bun", "install", "--frozen-lockfile"], webPath);
+    run(["bun", "run", "build"], webPath);
+  }
+  const tags = noweb ? ["-tags", "noweb"] : [];
   run(
-    ["go", "build", "-trimpath", "-o", outfile, "./cmd/nibbled"],
+    ["go", "build", "-trimpath", ...tags, "-o", outfile, "./cmd/nibbled"],
     daemonModulePath,
   );
   return outfile;
 };
 
 if (import.meta.main) {
-  console.log(
-    buildDaemon(path.join(daemonModulePath, "bin", DAEMON_BINARY_NAME)),
-  );
+  const outfile = path.join(daemonModulePath, "bin", DAEMON_BINARY_NAME);
+  const noweb = process.argv.includes("--noweb");
+  const built = buildDaemon(outfile, noweb);
+  console.log(built);
 }
