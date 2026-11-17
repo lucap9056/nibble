@@ -155,6 +155,15 @@ describe("nibbled", () => {
     });
   }, STARTUP_TIMEOUT_MS);
 
+  test("serves the embedded web ui without a token", async () => {
+    const response = await fetch(`${adminUrl}/`);
+    expect(response.status).toBe(200);
+    const contentType = response.headers.get("Content-Type");
+    expect(contentType).toStartWith("text/html");
+    const html = await response.text();
+    expect(html).toContain("<title>nibble</title>");
+  });
+
   test("requires a password change before the first login", async () => {
     const initialLogin = await admin("POST", "/api/login", {
       password: INITIAL_PASSWORD,

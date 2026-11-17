@@ -5,15 +5,27 @@ export const DAEMON_BINARY_NAME =
 
 const rootPath = path.resolve(import.meta.dir, "..");
 const daemonModulePath = path.join(rootPath, "nibble-daemon");
+const webPath = path.join(daemonModulePath, "web");
+
+const run = (command: string[], cwd: string) => {
+  const result = Bun.spawnSync(command, {
+    cwd,
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  if (!result.success) {
+    const commandText = command.join(" ");
+    throw new Error(`${commandText} failed with exit code ${result.exitCode}`);
+  }
+};
 
 export const buildDaemon = (outfile: string) => {
-  const result = Bun.spawnSync(
+  run(["bun", "install", "--frozen-lockfile"], webPath);
+  run(["bun", "run", "build"], webPath);
+  run(
     ["go", "build", "-trimpath", "-o", outfile, "./cmd/nibbled"],
-    { cwd: daemonModulePath, stdout: "inherit", stderr: "inherit" },
+    daemonModulePath,
   );
-  if (!result.success) {
-    throw new Error(`go build failed with exit code ${result.exitCode}`);
-  }
   return outfile;
 };
 

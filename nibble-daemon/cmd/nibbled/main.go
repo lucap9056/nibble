@@ -7,6 +7,7 @@ import (
 	"daemon/internal/config"
 	"daemon/internal/engine"
 	"daemon/internal/storage"
+	"daemon/web"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -209,7 +210,11 @@ func run(lc *lifecycle.Coordinator) error {
 	protectedHandler := auth.RequireToken(credentials, apiHandler)
 	authHandler := auth.NewHandler(credentials, protectedHandler)
 	jsonHandler := auth.RequireJSON(authHandler)
-	handler := auth.RequireOrigin(cfg.AdminPublicURL, jsonHandler)
+	webHandler := web.Handler()
+	adminMux := http.NewServeMux()
+	adminMux.Handle("GET /{$}", webHandler)
+	adminMux.Handle("/api/", jsonHandler)
+	handler := auth.RequireOrigin(cfg.AdminPublicURL, adminMux)
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: adminReadHeaderTimeout}
 	lc.OnExit(func() {
 		shutdownCtx, cancel := context.WithTimeout(ctx, adminShutdownTimeout)
