@@ -9,9 +9,10 @@ import (
 )
 
 var (
-	errBubbleNotFound   = errors.New("bubble not found")
-	errSnapshotNotFound = errors.New("snapshot not found")
-	errSnapshotDesired  = errors.New("snapshot is the desired snapshot")
+	errBubbleNotFound    = errors.New("bubble not found")
+	errSnapshotNotFound  = errors.New("snapshot not found")
+	errSnapshotDesired   = errors.New("snapshot is the desired snapshot")
+	errInvalidBubbleName = errors.New("invalid bubble name")
 )
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

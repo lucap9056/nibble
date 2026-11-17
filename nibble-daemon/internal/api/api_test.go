@@ -15,6 +15,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -102,6 +103,7 @@ func (f *fixture) do(t *testing.T, method, path, body string) (int, map[string]a
 	bodyReader := strings.NewReader(body)
 	req, err := http.NewRequest(method, f.server.URL+path, bodyReader)
 	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
@@ -121,4 +123,14 @@ func (f *fixture) save(t *testing.T, record storage.Bubble) {
 	ctx := context.Background()
 	_, err := f.storage.SaveBubble(ctx, record)
 	require.NoError(t, err)
+}
+
+func TestRejectsTraversalName(t *testing.T) {
+	f := newFixture(t)
+
+	encodedStatus, _ := f.do(t, http.MethodPost, "/api/bubbles/..%2Fsnapshots%2Falpha", "")
+	dotStatus, _ := f.do(t, http.MethodPost, "/api/bubbles/%2e%2e/snapshots/alpha", "")
+	assert.Equal(t, http.StatusBadRequest, encodedStatus)
+	assert.Equal(t, http.StatusBadRequest, dotStatus)
+	assert.Empty(t, f.engine.requests)
 }
