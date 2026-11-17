@@ -1,0 +1,25 @@
+name: nibble-dev
+
+services:
+  nibble:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: app
+      args:
+        WEB: none
+    container_name: nibble-dev
+    environment:
+      LOG_LEVEL: "debug"
+      ADMIN_INITIAL_PASSWORD: "admin"
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8081:8081"
+    tmpfs:
+      - /run/nibble:uid=65532,gid=65532,mode=0755
+    volumes:
+      - ../example/bubbles:/srv/nibble/bubbles:ro
+      - nibble-data:/var/lib/nibble
+
+volumes:
+  nibble-data:
