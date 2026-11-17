@@ -14,5 +14,6 @@
   "editor.codeActionsOnSave": {
     "source.fixAll.biome": "explicit",
     "source.organizeImports.biome": "explicit"
-  }
+  },
+  "[svelte]": { "editor.defaultFormatter": "biomejs.biome" }
 }
