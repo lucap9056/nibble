@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"daemon/internal/api"
+	"daemon/internal/auth"
 	"daemon/internal/config"
 	"daemon/internal/engine"
 	"daemon/internal/storage"
@@ -61,8 +62,9 @@ func main() {
 }
 
 const (
-	adminShutdownTimeout  = 10 * time.Second
-	engineShutdownTimeout = 30 * time.Second
+	adminShutdownTimeout   = 10 * time.Second
+	adminReadHeaderTimeout = 10 * time.Second
+	engineShutdownTimeout  = 30 * time.Second
 )
 
 func readDesiredBubbles() ([]storage.Bubble, error) {
@@ -78,6 +80,14 @@ func readDesiredBubbles() ([]storage.Bubble, error) {
 
 func run(lc *lifecycle.Coordinator) error {
 	cfg, err := config.FromEnv()
+	if err != nil {
+		return err
+	}
+	secret, err := auth.LoadSecret(cfg.JWTSecretFile)
+	if err != nil {
+		return err
+	}
+	credentials, err := auth.LoadCredentials(cfg.PasswordFile, secret, cfg.InitialPassword)
 	if err != nil {
 		return err
 	}
@@ -195,8 +205,12 @@ func run(lc *lifecycle.Coordinator) error {
 		return fmt.Errorf("failed to listen admin: %w", err)
 	}
 	control := engine.NewControl(cfg.ControlSocket)
-	handler := api.New(store, control)
-	server := &http.Server{Handler: handler}
+	apiHandler := api.New(store, control)
+	protectedHandler := auth.RequireToken(credentials, apiHandler)
+	authHandler := auth.NewHandler(credentials, protectedHandler)
+	jsonHandler := auth.RequireJSON(authHandler)
+	handler := auth.RequireOrigin(cfg.AdminPublicURL, jsonHandler)
+	server := &http.Server{Handler: handler, ReadHeaderTimeout: adminReadHeaderTimeout}
 	lc.OnExit(func() {
 		shutdownCtx, cancel := context.WithTimeout(ctx, adminShutdownTimeout)
 		defer cancel()

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -25,6 +26,10 @@ type Config struct {
 	EngineBinaryPath string
 	ControlSocket    string
 	ReportSocket     string
+	JWTSecretFile    string
+	PasswordFile     string
+	InitialPassword  string
+	AdminPublicURL   *url.URL
 }
 
 func envOr(key, fallback string) string {
@@ -48,18 +53,30 @@ func FromEnv() (Config, error) {
 	defaultDatabasePath := filepath.Join(rootDir, "nibble.db")
 	defaultEngineBinaryPath := filepath.Join(rootDir, engineBinaryName)
 	defaultReportSocket := filepath.Join(rootDir, "nibbled.sock")
+	defaultJWTSecretFile := filepath.Join(rootDir, "nibbled.key")
+	defaultPasswordFile := filepath.Join(rootDir, "nibbled.passwd")
 	c := Config{
 		AdminListen:      envOr("ADMIN_LISTEN", "127.0.0.1:8081"),
 		DatabasePath:     envOr("DATABASE_PATH", defaultDatabasePath),
 		EngineBinaryPath: envOr("ENGINE_BINARY", defaultEngineBinaryPath),
 		ReportSocket:     envOr("REPORT_SOCKET", defaultReportSocket),
+		JWTSecretFile:    envOr("ADMIN_JWT_SECRET_FILE", defaultJWTSecretFile),
+		PasswordFile:     envOr("ADMIN_PASSWORD_FILE", defaultPasswordFile),
+		InitialPassword:  envOr("ADMIN_INITIAL_PASSWORD", "admin"),
+	}
+	if publicURLText := os.Getenv("ADMIN_PUBLIC_URL"); publicURLText != "" {
+		publicURL, err := url.Parse(publicURLText)
+		if err != nil || publicURL.Scheme == "" || publicURL.Host == "" {
+			return Config{}, fmt.Errorf("ADMIN_PUBLIC_URL must be an absolute url: %s", publicURLText)
+		}
+		c.AdminPublicURL = publicURL
 	}
 	// Mirrors the engine's own default, which places the socket next to its executable.
 	engineDir := filepath.Dir(c.EngineBinaryPath)
 	defaultControlSocket := filepath.Join(engineDir, "nibble.sock")
 	c.ControlSocket = envOr("CONTROL_SOCKET", defaultControlSocket)
 
-	paths := []*string{&c.DatabasePath, &c.EngineBinaryPath, &c.ControlSocket, &c.ReportSocket}
+	paths := []*string{&c.DatabasePath, &c.EngineBinaryPath, &c.ControlSocket, &c.ReportSocket, &c.JWTSecretFile, &c.PasswordFile}
 	for _, path := range paths {
 		absolutePath, err := filepath.Abs(*path)
 		if err != nil {
