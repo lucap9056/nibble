@@ -367,19 +367,21 @@ describe("RouterProcess lifecycle", () => {
     const socketDir = await mkdtemp(SOCKET_DIR_PREFIX);
     const socketPath = path.join(socketDir, "b.sock");
     const bubble = startFakeBubble(socketPath, "b");
-    const routes = [{ routePath: "/b", socketPath }];
-    const router = new RouterProcess(routerBinaryPath);
-    const port = await router.start(LISTEN, routes);
+    try {
+      const routes = [{ routePath: "/b", socketPath }];
+      const router = new RouterProcess(routerBinaryPath);
+      const port = await router.start(LISTEN, routes);
 
-    const url = `ws://${HOST}:${port}/b`;
-    const session = openWebSocket(url);
-    await session.opened;
-    await router.stop(true);
-    const [code] = await session.closed;
-    expect(code).not.toBe(1000);
-
-    bubble.server.stop(true);
-    await rm(socketDir, { recursive: true, force: true });
+      const url = `ws://${HOST}:${port}/b`;
+      const session = openWebSocket(url);
+      await session.opened;
+      await router.stop(true);
+      const [code] = await session.closed;
+      expect(code).not.toBe(1000);
+    } finally {
+      bubble.server.stop(true);
+      await rm(socketDir, { recursive: true, force: true });
+    }
   });
 
   test("rejects setRoutes while stopping and after exit", async () => {
