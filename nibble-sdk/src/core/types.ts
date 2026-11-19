@@ -2,11 +2,6 @@ export interface DefaultNibbleWebSocketContext {
   connId: string;
 }
 
-export const createDefaultNibbleWebSocketContext =
-  (): DefaultNibbleWebSocketContext => ({
-    connId: Bun.randomUUIDv7(),
-  });
-
 export type NibbleWebSocket<T = DefaultNibbleWebSocketContext> =
   Bun.ServerWebSocket<T>;
 

@@ -3,7 +3,7 @@ import path from "node:path";
 import { format } from "node:util";
 import {
   assertBubble,
-  createDefaultNibbleWebSocketContext,
+  type DefaultNibbleWebSocketContext,
   NIBBLE_HTTP_METHODS,
   type NibbleBubble,
   type NibbleHttpMethod,
@@ -100,17 +100,22 @@ import * as nibbleCors from "@lucap9056/nibble/cors";
     return NIBBLE_HTTP_METHODS.find((method) => method === normalized);
   };
 
+  const createDefaultWebSocketContext = (): DefaultNibbleWebSocketContext => ({
+    connId: Bun.randomUUIDv7(),
+  });
+
   const handleUpgrade = async (
     req: Request,
     server: Bun.Server<unknown>,
-    upgradeHandler: NonNullable<NibbleWebSocketHandlers<unknown>["upgrade"]>,
+    upgradeHandler: NibbleWebSocketHandlers<unknown>["upgrade"],
   ): Promise<Response | undefined> => {
     try {
-      const result = await upgradeHandler(req);
+      const result = await upgradeHandler?.(req);
       if (result instanceof Response) {
         return result;
       }
-      if (server.upgrade(req, { data: result })) {
+      const data = result ?? createDefaultWebSocketContext();
+      if (server.upgrade(req, { data })) {
         return;
       }
       return BubbleResponses.badRequest();
@@ -121,9 +126,6 @@ import * as nibbleCors from "@lucap9056/nibble/cors";
   };
 
   const startupServer = async ({ bubbleSocketPath, bubble }: BubbleInfo) => {
-    const upgradeHandler =
-      bubble.handlers.wss?.upgrade ?? createDefaultNibbleWebSocketContext;
-
     const websocket: WebSocketHandler<unknown> = {};
     if (bubble.handlers.wss) {
       const { onconnect, onmessage, onclose } = bubble.handlers.wss;
@@ -148,8 +150,9 @@ import * as nibbleCors from "@lucap9056/nibble/cors";
       fetch(req, server) {
         const upgradeHeader = req.headers.get("upgrade")?.toLowerCase();
         if (upgradeHeader === "websocket") {
-          if (bubble.handlers.wss) {
-            return handleUpgrade(req, server, upgradeHandler);
+          const wss = bubble.handlers.wss;
+          if (wss) {
+            return handleUpgrade(req, server, wss.upgrade);
           }
         } else {
           const method = tryParseNibbleHttpMethod(req.method);

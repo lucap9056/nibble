@@ -1,5 +1,4 @@
 import {
-  createDefaultNibbleWebSocketContext,
   type DefaultNibbleWebSocketContext,
   NIBBLE_HTTP_METHODS,
   NibbleDefinitionError,
@@ -311,7 +310,7 @@ function createOptionsHandler(
 }
 
 function withOriginCheck<T>(
-  upgrade: NonNullable<NibbleWebSocketHandlers<T>["upgrade"]>,
+  upgrade: NibbleWebSocketHandlers<T>["upgrade"],
   cors: ResolvedCors,
 ): NonNullable<NibbleWebSocketHandlers<T>["upgrade"]> {
   return (req) => {
@@ -319,7 +318,8 @@ function withOriginCheck<T>(
     if (origin !== null && !isAllowedOrigin(cors, origin)) {
       return Response.json({ error: "Forbidden" }, { status: 403 });
     }
-    return upgrade(req);
+    // engine fills in its default context when upgrade resolves to undefined
+    return upgrade ? upgrade(req) : (undefined as T);
   };
 }
 
@@ -365,11 +365,7 @@ export function cors<T = DefaultNibbleWebSocketContext>(
     corsHandlers.wss = resolved.allowedOrigins
       ? {
           ...handlers.wss,
-          upgrade: withOriginCheck(
-            handlers.wss.upgrade ??
-              (createDefaultNibbleWebSocketContext as () => T),
-            resolved,
-          ),
+          upgrade: withOriginCheck(handlers.wss.upgrade, resolved),
         }
       : handlers.wss;
   }
