@@ -1,16 +1,27 @@
+/// <reference path="./bun-shim.d.ts" />
+import type { ServerWebSocket, WebSocketHandler } from "bun";
+
 export interface DefaultNibbleWebSocketContext {
   connId: string;
 }
 
+// Without @types/bun the shim interfaces are empty, so these collapse to unknown.
 export type NibbleWebSocket<T = DefaultNibbleWebSocketContext> =
-  Bun.ServerWebSocket<T>;
+  keyof ServerWebSocket<T> extends never ? unknown : ServerWebSocket<T>;
+
+export type NibbleWebSocketMessage<T = DefaultNibbleWebSocketContext> =
+  WebSocketHandler<T> extends {
+    message?: (ws: never, message: infer Message) => unknown;
+  }
+    ? Message
+    : unknown;
 
 export interface NibbleWebSocketHandlers<T = DefaultNibbleWebSocketContext> {
   upgrade?: (req: Request) => T | Response | Promise<T | Response>;
   onconnect?: (ws: NibbleWebSocket<T>) => void | Promise<void>;
   onmessage?: (
     ws: NibbleWebSocket<T>,
-    message: string | Buffer<ArrayBuffer>,
+    message: NibbleWebSocketMessage<T>,
   ) => void | Promise<void>;
   onclose?: (
     ws: NibbleWebSocket<T>,
