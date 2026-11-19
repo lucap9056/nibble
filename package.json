@@ -9,6 +9,7 @@
     "build:engine": "bun scripts/build-engine.ts",
     "build:router": "bun scripts/build-router.ts",
     "build:daemon": "bun scripts/build-daemon.ts",
+    "build:sdk": "bun scripts/build-sdk.ts",
     "test:integration": "bun run build && bun test ./tests/daemon.integration.ts",
     "proto": "bun scripts/proto.ts",
     "typecheck": "tsc -b nibble-sdk nibble-engine example scripts tests",
