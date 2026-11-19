@@ -7,7 +7,7 @@ import {
   type NibbleHttpHandler,
   type NibbleHttpMethod,
   type NibbleWebSocketHandlers,
-} from "../core";
+} from "@lucap9056/nibble";
 
 export type NibbleCorsMethod = Uppercase<NibbleHttpMethod>;
 
