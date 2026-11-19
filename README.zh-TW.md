@@ -210,10 +210,10 @@ cd nibble-sdk/dist && npm publish --access public
 
 ### 測試
 
-先執行 `bun run proto`。
+先執行 `bun run proto` 與 `bun run build:router`。
 
 ```bash
-(cd nibble-engine && bun test)
+(cd nibble-engine && bun run test)
 (cd nibble-router && go test ./...)
 (cd nibble-daemon && go test ./...)
 bun run test:integration
