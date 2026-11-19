@@ -42,9 +42,12 @@ jobs:
       - name: Set up toolchain
         uses: ./.github/actions/setup
 
+      - name: Build router
+        run: bun run build:router
+
       - name: Test engine
         working-directory: nibble-engine
-        run: bun test
+        run: bun run test
 
       - name: Test router
         working-directory: nibble-router
