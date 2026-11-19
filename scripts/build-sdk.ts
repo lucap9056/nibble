@@ -5,6 +5,7 @@ const rootPath = path.resolve(import.meta.dir, "..");
 const sdkPath = path.join(rootPath, "nibble-sdk");
 const srcPath = path.join(sdkPath, "src");
 const licensePath = path.join(rootPath, "LICENSE");
+const npmignorePath = path.join(sdkPath, ".npmignore");
 
 interface SdkManifest {
   name: string;
@@ -169,12 +170,16 @@ export const buildSdk = async (outdir: string) => {
   const licenseOutput = path.join(outdir, "LICENSE");
   await copyFile(licensePath, licenseOutput);
 
+  const npmignoreOutput = path.join(outdir, ".npmignore");
+  await copyFile(npmignorePath, npmignoreOutput);
+
   return [
     ...esmOutputs,
     ...cjsOutputs,
     ...declarationOutputs,
     manifestOutput,
     licenseOutput,
+    npmignoreOutput,
   ];
 };
 

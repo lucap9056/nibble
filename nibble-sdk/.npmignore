@@ -1,0 +1,9 @@
+*.tsbuildinfo
+*.map
+*.log
+*.bat
+*.test.*
+*.spec.*
+tsconfig*.json
+.env
+.env.*
