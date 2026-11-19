@@ -86,14 +86,30 @@ const buildDeclarations = async (outdir: string) => {
   ]);
 
   const outputs: string[] = [];
-  const glob = new Bun.Glob("**/*.d.ts");
-  for await (const relativePath of glob.scan(outdir)) {
+  const emittedGlob = new Bun.Glob("**/*.d.ts");
+  for await (const relativePath of emittedGlob.scan(outdir)) {
     const esmPath = path.join(outdir, relativePath);
     const cjsPath = esmPath.replace(/\.d\.ts$/, ".d.cts");
+    const sourcePath = path.join(
+      srcPath,
+      relativePath.replace(/\.d\.ts$/, ".ts"),
+    );
+    const source = await Bun.file(sourcePath).text();
+    // tsc drops reference path directives from emitted declarations
+    const references = source.match(/^\/\/\/ <reference path=.*$/gm) ?? [];
+    const header = references.map((reference) => `${reference}\n`).join("");
     const declaration = await Bun.file(esmPath).text();
-    await Bun.write(esmPath, withExtension(declaration, ".js"));
-    await Bun.write(cjsPath, withExtension(declaration, ".cjs"));
+    await Bun.write(esmPath, header + withExtension(declaration, ".js"));
+    await Bun.write(cjsPath, header + withExtension(declaration, ".cjs"));
     outputs.push(esmPath, cjsPath);
+  }
+
+  const handwrittenGlob = new Bun.Glob("**/*.d.ts");
+  for await (const relativePath of handwrittenGlob.scan(srcPath)) {
+    const sourcePath = path.join(srcPath, relativePath);
+    const outPath = path.join(outdir, relativePath);
+    await copyFile(sourcePath, outPath);
+    outputs.push(outPath);
   }
   return outputs;
 };
