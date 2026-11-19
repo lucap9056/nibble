@@ -1,0 +1,68 @@
+name: Test
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Lint & Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up toolchain
+        uses: ./.github/actions/setup
+
+      - name: Lint
+        run: bun run check
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Check web console
+        working-directory: nibble-daemon/web
+        run: |
+          bun install --frozen-lockfile
+          bun run check
+
+  unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up toolchain
+        uses: ./.github/actions/setup
+
+      - name: Test engine
+        working-directory: nibble-engine
+        run: bun test
+
+      - name: Test router
+        working-directory: nibble-router
+        run: go test -count=1 ./...
+
+      - name: Test daemon
+        working-directory: nibble-daemon
+        run: go test -count=1 -tags noweb ./...
+
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up toolchain
+        uses: ./.github/actions/setup
+
+      - name: Run tests
+        run: bun run test:integration

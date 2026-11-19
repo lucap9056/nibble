@@ -1,0 +1,36 @@
+name: Set up toolchain
+description: Install Bun, Go and protoc, install dependencies and generate protobuf code
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Bun
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: 1.4.4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: nibble-daemon/go.mod
+        cache-dependency-path: |
+          nibble-daemon/go.sum
+          nibble-router/go.sum
+
+    - name: Install protoc and plugins
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends protobuf-compiler
+        go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+        bun add -g ts-proto@2.12.0
+        echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+        echo "$(bun pm bin -g)" >> "$GITHUB_PATH"
+
+    - name: Install dependencies
+      shell: bash
+      run: bun install --frozen-lockfile
+
+    - name: Generate protobuf code
+      shell: bash
+      run: bun run proto
