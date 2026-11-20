@@ -13,7 +13,8 @@ English | [繁體中文](README.zh-TW.md)
 
 - A bubble is one `*.bubble.ts` file that exports its HTTP and WebSocket handlers
 - The file path is the endpoint: `api/users.bubble.ts` serves `/api/users`, and `index` serves its folder
-- Handlers take a standard `Request` and return a `Response`; there is no server or framework to set up
+- Handlers take a standard `Request` and return a `Response`
+- There is no server or framework to set up
 - Each bubble runs in its own worker
 
 ### Gateway
@@ -84,7 +85,7 @@ docker compose up -d
 2. Start and route `hello`
 3. `curl "http://localhost:8080/hello?name=nibble"`
 
-Edit the file, then deploy it again from the console; the new version takes over once its worker is running.
+Edit the file, then deploy it again from the console. The new version takes over once its worker is running.
 
 - The container starts as root, then `nibbled` switches to the owner of the mounted `bubbles` folder
 - When that folder is owned by root, `nibbled` switches to `65532` (nonroot) instead
@@ -101,8 +102,10 @@ bun run build
 ./dist/nibbled
 ```
 
-- `dist/` holds `nibbled`, the engine `nibble` and the gateway `nibble-router`; data files are kept next to them
-- Bubbles are read from `dist/bubbles`; set `BUBBLE_SOURCE_DIR` to use another folder
+- `dist/` holds `nibbled`, the engine `nibble` and the gateway `nibble-router`
+- Data files are kept next to them
+- Bubbles are read from `dist/bubbles`
+- Set `BUBBLE_SOURCE_DIR` to use another folder
 - The console listens on `127.0.0.1:8081` and the gateway on `127.0.0.1:8080`
 
 ---
@@ -118,11 +121,12 @@ nibbled (Go)                control plane: web console, desired state in SQLite
    └─ nibble-router (Go)    gateway: proxies HTTP and WebSocket to the sockets
 ```
 
-- Bubbles run as long-lived workers, so there are no cold starts; each bubble runs one worker, with no scale-to-zero or autoscaling
+- Bubbles run as long-lived workers, so there are no cold starts
+- Each bubble runs one worker, with no scale-to-zero or autoscaling
 
 | Directory | Contents |
 | :--- | :--- |
-| `nibble-daemon` | `nibbled`, auth and storage; the web console in `web/` |
+| `nibble-daemon` | `nibbled`, auth and storage, with the web console in `web/` |
 | `nibble-engine` | Engine: snapshots and bubble workers |
 | `nibble-router` | Gateway and its protobuf schema `router.proto` |
 | `nibble-sdk` | `@lucap9056/nibble`, the package bubbles import |
@@ -152,22 +156,27 @@ export default define({
 ```
 
 - **Handlers**: `get`, `post`, `put`, `delete`, `patch`, `options`, and `wss` with `upgrade`, `onconnect`, `onmessage`, `onclose`
-- **WebSocket context**: `upgrade` returns the value for `ws.data`, or a `Response` to reject; without it, `ws.data` is `{ connId }` with a UUIDv7
+- **WebSocket context**: `upgrade` returns the value for `ws.data`, or a `Response` to reject
+- Without `upgrade`, `ws.data` is `{ connId }` with a UUIDv7
 - **CORS**: `cors()` answers preflight requests and checks the `Origin` of WebSocket upgrades
 - **Entry files**: `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, `.cjs`
 - **Names**: path segments of letters, digits, `.`, `_`, `~` and `-`
-- **Types**: install `@lucap9056/nibble` for editor types, and `@types/bun` for full WebSocket types; without it they resolve to `unknown`
+- **Types**: install `@lucap9056/nibble` for editor types, and `@types/bun` for full WebSocket types
+- Without `@types/bun`, WebSocket types resolve to `unknown`
 - See [`example/bubbles/example.bubble.ts`](example/bubbles/example.bubble.ts) for every handler
 
 ### Routing
 
-- Requests under a bubble's route reach it with the prefix stripped; the prefix is passed in `X-Forwarded-Prefix`
+- Requests under a bubble's route reach it with the prefix stripped
+- The prefix is passed in `X-Forwarded-Prefix`
 - A bubble can run without routing, then be routed once it is ready
 
 ### Snapshots and Deploys
 
-- A snapshot bundles a bubble's source and is named by the SHA-256 of the bundled code; snapshots are kept in `BUBBLE_SNAPSHOT_DIR`
-- A bubble keeps several snapshots; deploy any of them to roll forward or back
+- A snapshot bundles a bubble's source and is named by the SHA-256 of the bundled code
+- Snapshots are kept in `BUBBLE_SNAPSHOT_DIR`
+- A bubble keeps several snapshots
+- Deploy any of them to roll forward or back
 - Deploying without a snapshot builds one from the latest source
 - Deploying or restarting starts a new worker, switches traffic once it is running, then stops the old one
 - npm packages stay external and load from where they are installed, so keep `node_modules` next to the source
@@ -200,14 +209,15 @@ echo '[{ "name": "hello", "routing": true }]' | ./dist/nibbled
 
 - Each entry takes `name`, `snapshotHash` and `routing`
 - An empty `snapshotHash` builds the latest source
-- Without stdin, `nibbled` restores the bubbles that were enabled; any that can no longer start are disabled
+- Without stdin, `nibbled` restores the bubbles that were enabled
+- Any that can no longer start are disabled
 
 ### Configuration
 
 | Variable | Default |
 | :--- | :--- |
 | `ADMIN_LISTEN` | `127.0.0.1:8081` |
-| `ADMIN_PUBLIC_URL` | unset; see [Console Authentication](#console-authentication) |
+| `ADMIN_PUBLIC_URL` | unset, see [Console Authentication](#console-authentication) |
 | `ADMIN_INITIAL_PASSWORD` | `admin` |
 | `ADMIN_PASSWORD_FILE` | `nibbled.passwd` next to `nibbled` |
 | `ADMIN_JWT_SECRET_FILE` | `nibbled.key` next to `nibbled`, generated on first start |
@@ -226,12 +236,14 @@ Set every variable on `nibbled`.
 
 ### Console Authentication
 
-- A single password; until it is changed, `ADMIN_INITIAL_PASSWORD` can only be used to set a new one
+- There is a single password
+- Until it is changed, `ADMIN_INITIAL_PASSWORD` can only be used to set a new one
   - The new password is 8 to 72 bytes and differs from the initial one
   - Changing the password signs out every session
 - A sign-in lasts 24 hours
 - 5 failed sign-ins within 5 minutes lock sign-in for up to 5 minutes
-- The console only opens on a loopback address or the host of `ADMIN_PUBLIC_URL`; set it when the console is served under a domain
+- The console only opens on a loopback address or the host of `ADMIN_PUBLIC_URL`
+- Set `ADMIN_PUBLIC_URL` when the console is served under a domain
 
 ### Console Development
 
@@ -242,9 +254,11 @@ docker compose -f docker-dev/docker-compose.yml up -d --build
 cd nibble-daemon/web && bun install && bun run dev
 ```
 
-- Open the address Vite prints; it forwards requests to `nibbled` at `NIBBLE_ADMIN_URL` (default `http://127.0.0.1:8081`)
+- Open the address Vite prints
+- Vite forwards requests to `nibbled` at `NIBBLE_ADMIN_URL` (default `http://127.0.0.1:8081`)
 - `docker-dev/` mounts `example/bubbles`, signs in with `admin` and logs at `debug`
-- Built with `WEB=none` (the `noweb` build tag), so `nibbled` serves no console; pages come from Vite
+- Built with `WEB=none` (the `noweb` build tag), so `nibbled` serves no console
+- Pages come from Vite
 - `bun run build:daemon --noweb` builds `nibbled` without the console outside Docker
 
 ### SDK

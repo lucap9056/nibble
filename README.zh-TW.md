@@ -118,11 +118,12 @@ nibbled (Go)                control plane：web console，desired state 存在 S
    └─ nibble-router (Go)    gateway：將 HTTP 與 WebSocket 轉送到 socket
 ```
 
-- Bubble 以常駐 worker 執行，因此沒有 cold start；每個 bubble 執行一個 worker，不支援 scale-to-zero 或自動擴展
+- Bubble 以常駐 worker 執行，因此沒有 cold start
+- 每個 bubble 執行一個 worker，不支援 scale-to-zero 或自動擴展
 
 | 目錄 | 內容 |
 | :--- | :--- |
-| `nibble-daemon` | `nibbled`、驗證與儲存；web console 在 `web/` |
+| `nibble-daemon` | `nibbled`、驗證與儲存，web console 在 `web/` |
 | `nibble-engine` | Engine：snapshot 與 bubble worker |
 | `nibble-router` | Gateway 與 protobuf schema `router.proto` |
 | `nibble-sdk` | `@lucap9056/nibble`，bubble import 的套件 |
@@ -152,7 +153,8 @@ export default define({
 ```
 
 - **Handler**：`get`、`post`、`put`、`delete`、`patch`、`options`，以及包含 `upgrade`、`onconnect`、`onmessage`、`onclose` 的 `wss`
-- **WebSocket context**：`upgrade` 回傳的值會成為 `ws.data`，回傳 `Response` 則拒絕連線；未定義時 `ws.data` 為帶有 UUIDv7 的 `{ connId }`
+- **WebSocket context**：`upgrade` 回傳的值會成為 `ws.data`，回傳 `Response` 則拒絕連線
+- 未定義 `upgrade` 時 `ws.data` 為帶有 UUIDv7 的 `{ connId }`
 - **CORS**：`cors()` 會回應 preflight request，並檢查 WebSocket upgrade 的 `Origin`
 - **入口檔**：`.ts`、`.tsx`、`.mts`、`.cts`、`.js`、`.jsx`、`.mjs`、`.cjs`
 - **名稱**：每段路徑由英數字、`.`、`_`、`~`、`-` 組成
@@ -200,7 +202,8 @@ echo '[{ "name": "hello", "routing": true }]' | ./dist/nibbled
 
 - 每個項目包含 `name`、`snapshotHash` 與 `routing`
 - `snapshotHash` 為空時會 build 最新的 source
-- 沒有 stdin 時，`nibbled` 會還原先前啟用的 bubble；無法再啟動的會改為停用
+- 沒有 stdin 時，`nibbled` 會還原先前啟用的 bubble
+- 無法再啟動的會改為停用
 
 ### 設定
 
@@ -226,12 +229,14 @@ echo '[{ "name": "hello", "routing": true }]' | ./dist/nibbled
 
 ### Console 驗證
 
-- 只有一組密碼；變更之前，`ADMIN_INITIAL_PASSWORD` 只能用來設定新密碼
+- 只有一組密碼
+- 變更之前，`ADMIN_INITIAL_PASSWORD` 只能用來設定新密碼
   - 新密碼長度為 8 到 72 bytes，且不能與初始密碼相同
   - 變更密碼會登出所有 session
 - 登入後 24 小時內有效
 - 5 分鐘內登入失敗 5 次，最多會暫停登入 5 分鐘
-- Console 只能透過 loopback 位址或 `ADMIN_PUBLIC_URL` 的 host 開啟；以網域提供 console 時需要設定
+- Console 只能透過 loopback 位址或 `ADMIN_PUBLIC_URL` 的 host 開啟
+- 以網域提供 console 時需要設定 `ADMIN_PUBLIC_URL`
 
 ### Console 開發
 
@@ -242,7 +247,8 @@ docker compose -f docker-dev/docker-compose.yml up -d --build
 cd nibble-daemon/web && bun install && bun run dev
 ```
 
-- 開啟 Vite 顯示的網址；Vite 會將 request 轉送到 `NIBBLE_ADMIN_URL` 上的 `nibbled`（預設 `http://127.0.0.1:8081`）
+- 開啟 Vite 顯示的網址
+- Vite 會將 request 轉送到 `NIBBLE_ADMIN_URL` 上的 `nibbled`（預設 `http://127.0.0.1:8081`）
 - `docker-dev/` 會掛載 `example/bubbles`，以 `admin` 登入，log level 為 `debug`
 - 以 `WEB=none`（`noweb` build tag）build，`nibbled` 不提供 console，頁面由 Vite 提供
 - 不使用 Docker 時，可用 `bun run build:daemon --noweb` build 不含 console 的 `nibbled`
