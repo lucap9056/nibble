@@ -33,6 +33,8 @@ English | [繁體中文](README.zh-TW.md)
 
 ### Deploy your first bubble
 
+Docker
+
 ```bash
 mkdir bubbles
 cat > bubbles/hello.bubble.ts <<'EOF'
@@ -48,10 +50,34 @@ EOF
 docker build -f docker/Dockerfile -t nibble .
 docker run -d --name nibble \
   -p 127.0.0.1:8080:8080 -p 127.0.0.1:8081:8081 \
-  --tmpfs /run/nibble:uid=65532,gid=65532,mode=0755 \
-  -v "$PWD/bubbles:/srv/nibble/bubbles:ro" \
+  --tmpfs /run/nibble \
+  -v "$PWD/bubbles:/srv/nibble/bubbles" \
   -v nibble-data:/var/lib/nibble \
   nibble
+```
+
+Docker Compose:
+
+```yaml
+# docker-compose.yml
+services:
+  nibble:
+    image: nibble
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8081:8081"
+    tmpfs:
+      - /run/nibble
+    volumes:
+      - ./bubbles:/srv/nibble/bubbles
+      - nibble-data:/var/lib/nibble
+
+volumes:
+  nibble-data:
+```
+
+```bash
+docker compose up -d
 ```
 
 1. Open the console at `http://localhost:8081`, sign in with `admin` and set a new password
@@ -59,6 +85,10 @@ docker run -d --name nibble \
 3. `curl "http://localhost:8080/hello?name=nibble"`
 
 Edit the file, then deploy it again from the console; the new version takes over once its worker is running.
+
+- The container starts as root, then `nibbled` switches to the owner of the mounted `bubbles` folder
+- When that folder is owned by root, `nibbled` switches to `65532` (nonroot) instead
+- Before switching, `nibbled` hands its data and socket dirs over to that user
 
 ### From source
 
@@ -141,6 +171,24 @@ export default define({
 - Deploying without a snapshot builds one from the latest source
 - Deploying or restarting starts a new worker, switches traffic once it is running, then stops the old one
 - npm packages stay external and load from where they are installed, so keep `node_modules` next to the source
+
+### Installing Dependencies
+
+`nibbled install` (or `nibbled i`) runs `bun install` with the engine's own Bun:
+
+  Docker
+```bash
+docker exec nibble nibbled i signature --production
+```
+  Docker Compose
+```bash
+docker compose exec nibble nibbled i signature --production
+```
+
+- The path is relative to `BUBBLE_SOURCE_DIR` like a bubble name, such as `signature` or `api/users`
+- It must stay inside that dir, contain `package.json`, and not be inside `node_modules`
+- Arguments after the path are passed to `bun install` as is
+- The install runs as the same user as `nibbled`, so the installed files belong to the owner of the `bubbles` folder
 
 ### Declarative Deploys
 

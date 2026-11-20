@@ -33,6 +33,8 @@
 
 ### 部署第一個 Bubble
 
+Docker
+
 ```bash
 mkdir bubbles
 cat > bubbles/hello.bubble.ts <<'EOF'
@@ -48,10 +50,34 @@ EOF
 docker build -f docker/Dockerfile -t nibble .
 docker run -d --name nibble \
   -p 127.0.0.1:8080:8080 -p 127.0.0.1:8081:8081 \
-  --tmpfs /run/nibble:uid=65532,gid=65532,mode=0755 \
-  -v "$PWD/bubbles:/srv/nibble/bubbles:ro" \
+  --tmpfs /run/nibble \
+  -v "$PWD/bubbles:/srv/nibble/bubbles" \
   -v nibble-data:/var/lib/nibble \
   nibble
+```
+
+Docker Compose：
+
+```yaml
+# docker-compose.yml
+services:
+  nibble:
+    image: nibble
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8081:8081"
+    tmpfs:
+      - /run/nibble
+    volumes:
+      - ./bubbles:/srv/nibble/bubbles
+      - nibble-data:/var/lib/nibble
+
+volumes:
+  nibble-data:
+```
+
+```bash
+docker compose up -d
 ```
 
 1. 開啟 console `http://localhost:8081`，以 `admin` 登入後設定新密碼
@@ -59,6 +85,10 @@ docker run -d --name nibble \
 3. `curl "http://localhost:8080/hello?name=nibble"`
 
 修改檔案後，在 console 重新部署，新版本的 worker running 後就會接手流量。
+
+- Container 以 root 啟動，`nibbled` 會切換為掛載的 `bubbles` 資料夾的擁有者
+- 該資料夾屬於 root 時，`nibbled` 改為切換成 `65532`（nonroot）
+- 切換前，`nibbled` 會將資料與 socket 資料夾交給該使用者
 
 ### 從原始碼
 
@@ -141,6 +171,24 @@ export default define({
 - 部署時未指定 snapshot，會從最新的 source build 一個
 - 部署或重啟時會先啟動新的 worker，等它 running 後才切換流量，再停掉舊的 worker
 - npm 套件不會被打包，執行時從安裝的位置載入，因此 `node_modules` 要保留在 source 旁邊
+
+### 安裝依賴
+
+`nibbled install`（或 `nibbled i`）以 engine 內建的 Bun 執行 `bun install`：
+
+  Docker
+```bash
+docker exec nibble nibbled i signature --production
+```
+  Docker Compose
+```bash
+docker compose exec nibble nibbled i signature --production
+```
+
+- 路徑與 bubble 名稱一樣是相對於 `BUBBLE_SOURCE_DIR` 的路徑，例如 `signature`、`api/users`
+- 必須位於該資料夾內、含有 `package.json`，且不能位於 `node_modules` 內
+- 路徑之後的參數會原樣傳給 `bun install`
+- 安裝與 `nibbled` 以相同使用者執行，安裝出的檔案會屬於 `bubbles` 資料夾的擁有者
 
 ### 宣告式部署
 
