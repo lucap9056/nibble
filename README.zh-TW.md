@@ -228,6 +228,8 @@ echo '[{ "name": "hello", "routing": true }]' | ./dist/nibbled
 
 所有變數都設定在 `nibbled` 上。
 
+`ADMIN_LISTEN` 與 `ROUTER_LISTEN` 也可使用 Unix socket，例如 `unix:///run/nibble/admin.sock`。
+
 ### Console 驗證
 
 - 只有一組密碼

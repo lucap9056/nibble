@@ -6,6 +6,7 @@ import (
 	"daemon/internal/auth"
 	"daemon/internal/config"
 	"daemon/internal/engine"
+	"daemon/internal/httputil"
 	"daemon/internal/install"
 	"daemon/internal/privilege"
 	"daemon/internal/storage"
@@ -13,7 +14,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -144,6 +144,11 @@ func run(lc *lifecycle.Coordinator) error {
 		},
 		Trees: []string{enginePaths.BubbleSnapshotDir, enginePaths.BubbleSocketDir},
 	}
+	for _, addr := range []string{cfg.AdminListen, enginePaths.RouterListen} {
+		if socketPath, ok := strings.CutPrefix(addr, httputil.UnixScheme); ok {
+			owned.Dirs = append(owned.Dirs, filepath.Dir(socketPath))
+		}
+	}
 	if err := privilege.Drop(enginePaths.BubbleSourceDir, owned); err != nil {
 		return err
 	}
@@ -265,7 +270,7 @@ func run(lc *lifecycle.Coordinator) error {
 		}
 	}
 
-	listener, err := net.Listen("tcp", cfg.AdminListen)
+	listener, err := httputil.NewListener(cfg.AdminListen)
 	if err != nil {
 		return fmt.Errorf("failed to listen admin: %w", err)
 	}

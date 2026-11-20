@@ -235,6 +235,8 @@ echo '[{ "name": "hello", "routing": true }]' | ./dist/nibbled
 
 Set every variable on `nibbled`.
 
+`ADMIN_LISTEN` and `ROUTER_LISTEN` also take a Unix socket, such as `unix:///run/nibble/admin.sock`.
+
 ### Console Authentication
 
 - There is a single password

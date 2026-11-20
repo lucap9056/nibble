@@ -52,6 +52,7 @@ type EnginePaths struct {
 	BubbleSourceDir   string
 	BubbleSnapshotDir string
 	BubbleSocketDir   string
+	RouterListen      string
 }
 
 func EnginePathsFromEnv() (EnginePaths, error) {
@@ -65,7 +66,8 @@ func EnginePathsFromEnv() (EnginePaths, error) {
 	if err != nil {
 		return EnginePaths{}, fmt.Errorf("failed to resolve engine binary: %w", err)
 	}
-	p := EnginePaths{BinaryPath: binaryPath}
+	routerListen := envOr("ROUTER_LISTEN", "127.0.0.1:8080")
+	p := EnginePaths{BinaryPath: binaryPath, RouterListen: routerListen}
 
 	// Mirrors the engine's own defaults, which place these dirs next to its executable.
 	engineDir := filepath.Dir(binaryPath)
