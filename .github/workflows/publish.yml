@@ -93,27 +93,51 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check SDK changes
+        id: changes
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          PATCH="$(echo "${VERSION}" | cut -d. -f3)"
+          PREVIOUS_TAG="$(git describe --tags --abbrev=0 --match 'v*.*.*' --exclude '*-*' "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+          PREVIOUS_VERSION="${PREVIOUS_TAG#v}"
+          # X.Y.0 and prereleases always publish, so ~X.Y.0 resolves even when later patches skip.
+          if [[ "${PATCH}" != "0" && "${PATCH}" != *-* && -n "${PREVIOUS_TAG}" ]] \
+            && [[ "$(echo "${VERSION}" | cut -d. -f1,2)" == "$(echo "${PREVIOUS_VERSION}" | cut -d. -f1,2)" ]] \
+            && git diff --quiet "${PREVIOUS_TAG}" "${GITHUB_SHA}" -- nibble-sdk/src; then
+            echo "nibble-sdk/src is unchanged since ${PREVIOUS_TAG}, skipping publish"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Set up Bun
+        if: steps.changes.outputs.skip != 'true'
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.4
 
       - name: Install dependencies
+        if: steps.changes.outputs.skip != 'true'
         run: bun install --frozen-lockfile
 
       - name: Build SDK
+        if: steps.changes.outputs.skip != 'true'
         env:
           NIBBLE_VERSION: ${{ github.ref_name }}
         run: bun run build:sdk
 
       - name: Set up Node
+        if: steps.changes.outputs.skip != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
 
       - name: Publish to npm
+        if: steps.changes.outputs.skip != 'true'
         working-directory: nibble-sdk/dist
         run: |
           # npm puts every publish on the latest dist-tag unless told otherwise, prereleases included.
