@@ -6,6 +6,7 @@ import (
 	"daemon/internal/auth"
 	"daemon/internal/config"
 	"daemon/internal/engine"
+	"daemon/internal/install"
 	"daemon/internal/storage"
 	"daemon/web"
 	"errors"
@@ -14,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -56,10 +58,41 @@ func main() {
 	logger := slog.New(handler).With("source", "daemon")
 	slog.SetDefault(logger)
 
+	if len(os.Args) > 1 && (os.Args[1] == "i" || os.Args[1] == "install") {
+		os.Exit(runInstall(os.Args[2:]))
+	}
+
 	if err := runner.Run(run); err != nil {
 		slog.Error("daemon failed", "err", err)
 		os.Exit(1)
 	}
+}
+
+func runInstall(args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "usage: nibbled install <path relative to BUBBLE_SOURCE_DIR> [bun install args...]")
+		return 2
+	}
+	paths, err := config.EnginePathsFromEnv()
+	if err != nil {
+		slog.Error("install failed", "err", err)
+		return 1
+	}
+	dir, err := install.ResolveTarget(paths.BubbleSourceDir, args[0])
+	if err != nil {
+		slog.Error("install failed", "err", err)
+		return 1
+	}
+
+	err = install.Run(paths.BinaryPath, dir, args[1:])
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+		return exitErr.ExitCode()
+	}
+	if err != nil {
+		slog.Error("install failed", "err", err)
+		return 1
+	}
+	return 0
 }
 
 const (

@@ -39,19 +39,65 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
+func engineBinaryPathIn(rootDir string) string {
+	engineBinaryName := "nibble"
+	if runtime.GOOS == "windows" {
+		engineBinaryName += ".exe"
+	}
+	return filepath.Join(rootDir, engineBinaryName)
+}
+
+type EnginePaths struct {
+	BinaryPath        string
+	BubbleSourceDir   string
+	BubbleSnapshotDir string
+	BubbleSocketDir   string
+}
+
+func EnginePathsFromEnv() (EnginePaths, error) {
+	executablePath, err := os.Executable()
+	if err != nil {
+		return EnginePaths{}, fmt.Errorf("failed to locate executable: %w", err)
+	}
+	rootDir := filepath.Dir(executablePath)
+
+	binaryPath, err := filepath.Abs(envOr("ENGINE_BINARY", engineBinaryPathIn(rootDir)))
+	if err != nil {
+		return EnginePaths{}, fmt.Errorf("failed to resolve engine binary: %w", err)
+	}
+	p := EnginePaths{BinaryPath: binaryPath}
+
+	// Mirrors the engine's own defaults, which place these dirs next to its executable.
+	engineDir := filepath.Dir(binaryPath)
+	engineDirs := []struct {
+		target *string
+		key    string
+		name   string
+	}{
+		{&p.BubbleSourceDir, "BUBBLE_SOURCE_DIR", "bubbles"},
+		{&p.BubbleSnapshotDir, "BUBBLE_SNAPSHOT_DIR", "snapshots"},
+		{&p.BubbleSocketDir, "BUBBLE_SOCKET_DIR", "sockets"},
+	}
+	for _, dir := range engineDirs {
+		defaultDir := filepath.Join(engineDir, dir.name)
+		absoluteDir, err := filepath.Abs(envOr(dir.key, defaultDir))
+		if err != nil {
+			return EnginePaths{}, fmt.Errorf("failed to resolve %s: %w", dir.key, err)
+		}
+		*dir.target = absoluteDir
+	}
+	return p, nil
+}
+
 func FromEnv() (Config, error) {
 	executablePath, err := os.Executable()
 	if err != nil {
 		return Config{}, fmt.Errorf("failed to locate executable: %w", err)
 	}
 	rootDir := filepath.Dir(executablePath)
-	engineBinaryName := "nibble"
-	if runtime.GOOS == "windows" {
-		engineBinaryName += ".exe"
-	}
 
 	defaultDatabasePath := filepath.Join(rootDir, "nibble.db")
-	defaultEngineBinaryPath := filepath.Join(rootDir, engineBinaryName)
+	defaultEngineBinaryPath := engineBinaryPathIn(rootDir)
 	defaultReportSocket := filepath.Join(rootDir, "nibbled.sock")
 	defaultJWTSecretFile := filepath.Join(rootDir, "nibbled.key")
 	defaultPasswordFile := filepath.Join(rootDir, "nibbled.passwd")
