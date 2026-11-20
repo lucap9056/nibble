@@ -159,6 +159,7 @@ export default define({
 - **入口檔**：`.ts`、`.tsx`、`.mts`、`.cts`、`.js`、`.jsx`、`.mjs`、`.cjs`
 - **名稱**：每段路徑由英數字、`.`、`_`、`~`、`-` 組成
 - **型別**：安裝 `@lucap9056/nibble` 取得 editor 型別，安裝 `@types/bun` 才有完整的 WebSocket 型別，否則為 `unknown`
+- **版本**：Bubble 執行時使用 engine 內建的 SDK，請安裝與 image 對應的 SDK 版本，例如 image `0.2` 搭配 `~0.2.0`
 - 所有 handler 的寫法見 [`example/bubbles/example.bubble.ts`](example/bubbles/example.bubble.ts)
 
 ### 路由
@@ -252,15 +253,6 @@ cd nibble-daemon/web && bun install && bun run dev
 - `docker-dev/` 會掛載 `example/bubbles`，以 `admin` 登入，log level 為 `debug`
 - 以 `WEB=none`（`noweb` build tag）build，`nibbled` 不提供 console，頁面由 Vite 提供
 - 不使用 Docker 時，可用 `bun run build:daemon --noweb` build 不含 console 的 `nibbled`
-
-### SDK
-
-```bash
-bun run build:sdk
-cd nibble-sdk/dist && npm publish --access public
-```
-
-- `nibble-sdk/dist` 是完整的套件，包含 ESM、CommonJS 以及兩者各自的型別宣告
 
 ### 測試
 

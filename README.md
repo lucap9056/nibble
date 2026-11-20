@@ -163,6 +163,7 @@ export default define({
 - **Names**: path segments of letters, digits, `.`, `_`, `~` and `-`
 - **Types**: install `@lucap9056/nibble` for editor types, and `@types/bun` for full WebSocket types
 - Without `@types/bun`, WebSocket types resolve to `unknown`
+- **Version**: bubbles run on the SDK built into the engine, so install the SDK matching the image, such as `~0.2.0` for image `0.2`
 - See [`example/bubbles/example.bubble.ts`](example/bubbles/example.bubble.ts) for every handler
 
 ### Routing
@@ -260,15 +261,6 @@ cd nibble-daemon/web && bun install && bun run dev
 - Built with `WEB=none` (the `noweb` build tag), so `nibbled` serves no console
 - Pages come from Vite
 - `bun run build:daemon --noweb` builds `nibbled` without the console outside Docker
-
-### SDK
-
-```bash
-bun run build:sdk
-cd nibble-sdk/dist && npm publish --access public
-```
-
-- `nibble-sdk/dist` is a complete package with ESM, CommonJS and type declarations for each
 
 ### Testing
 
