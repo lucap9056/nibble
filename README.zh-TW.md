@@ -181,14 +181,14 @@ export default define({
 
   Docker
 ```bash
-docker exec nibble nibbled i signature --production
+docker exec nibble nibbled i example --production
 ```
   Docker Compose
 ```bash
-docker compose exec nibble nibbled i signature --production
+docker compose exec nibble nibbled i example --production
 ```
 
-- 路徑與 bubble 名稱一樣是相對於 `BUBBLE_SOURCE_DIR` 的路徑，例如 `signature`、`api/users`
+- 路徑與 bubble 名稱一樣是相對於 `BUBBLE_SOURCE_DIR` 的路徑，例如 `example`、`api/users`
 - 必須位於該資料夾內、含有 `package.json`，且不能位於 `node_modules` 內
 - 路徑之後的參數會原樣傳給 `bun install`
 - 安裝與 `nibbled` 以相同使用者執行，安裝出的檔案會屬於 `bubbles` 資料夾的擁有者

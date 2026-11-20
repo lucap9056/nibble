@@ -188,14 +188,14 @@ export default define({
 
   Docker
 ```bash
-docker exec nibble nibbled i signature --production
+docker exec nibble nibbled i example --production
 ```
   Docker Compose
 ```bash
-docker compose exec nibble nibbled i signature --production
+docker compose exec nibble nibbled i example --production
 ```
 
-- The path is relative to `BUBBLE_SOURCE_DIR` like a bubble name, such as `signature` or `api/users`
+- The path is relative to `BUBBLE_SOURCE_DIR` like a bubble name, such as `example` or `api/users`
 - It must stay inside that dir, contain `package.json`, and not be inside `node_modules`
 - Arguments after the path are passed to `bun install` as is
 - The install runs as the same user as `nibbled`, so the installed files belong to the owner of the `bubbles` folder
