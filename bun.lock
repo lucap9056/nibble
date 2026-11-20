@@ -18,7 +18,7 @@
     },
     "nibble-engine": {
       "name": "@lucap9056/nibble-engine",
-      "version": "0.1.0",
+      "version": "0.0.0",
       "dependencies": {
         "@lucap9056/nibble": "workspace:*",
       },
@@ -28,7 +28,7 @@
     },
     "nibble-sdk": {
       "name": "@lucap9056/nibble",
-      "version": "0.1.0",
+      "version": "0.0.0",
     },
     "scripts": {
       "name": "@lucap9056/nibble-scripts",

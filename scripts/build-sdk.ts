@@ -18,6 +18,12 @@ const manifestPath = path.join(sdkPath, "package.json");
 const manifest = (await Bun.file(manifestPath).json()) as SdkManifest;
 const entries = Object.entries(manifest.exports);
 
+const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+const version = Bun.env.NIBBLE_VERSION?.replace(/^v/, "") ?? manifest.version;
+if (!SEMVER.test(version)) {
+  throw new Error(`NIBBLE_VERSION must be a semver version: ${version}`);
+}
+
 const toDist = (source: string, extension: string) =>
   source.replace(/^\.\/src\//, "./").replace(/\.ts$/, extension);
 
@@ -143,7 +149,7 @@ const writeManifest = async (outdir: string) => {
 
   const distManifest = {
     name: manifest.name,
-    version: manifest.version,
+    version,
     license: manifest.license,
     type: "module",
     sideEffects: false,
