@@ -7,6 +7,7 @@ import (
 	"daemon/internal/config"
 	"daemon/internal/engine"
 	"daemon/internal/install"
+	"daemon/internal/privilege"
 	"daemon/internal/storage"
 	"daemon/web"
 	"errors"
@@ -16,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -78,6 +80,10 @@ func runInstall(args []string) int {
 		slog.Error("install failed", "err", err)
 		return 1
 	}
+	if err := privilege.Drop(paths.BubbleSourceDir, privilege.Ownership{}); err != nil {
+		slog.Error("install failed", "err", err)
+		return 1
+	}
 	dir, err := install.ResolveTarget(paths.BubbleSourceDir, args[0])
 	if err != nil {
 		slog.Error("install failed", "err", err)
@@ -117,6 +123,31 @@ func run(lc *lifecycle.Coordinator) error {
 	if err != nil {
 		return err
 	}
+	enginePaths, err := config.EnginePathsFromEnv()
+	if err != nil {
+		return err
+	}
+	owned := privilege.Ownership{
+		Dirs: []string{
+			filepath.Dir(cfg.DatabasePath),
+			filepath.Dir(cfg.PasswordFile),
+			filepath.Dir(cfg.JWTSecretFile),
+			filepath.Dir(cfg.ReportSocket),
+			filepath.Dir(cfg.ControlSocket),
+		},
+		Files: []string{
+			cfg.DatabasePath,
+			cfg.DatabasePath + "-wal",
+			cfg.DatabasePath + "-shm",
+			cfg.PasswordFile,
+			cfg.JWTSecretFile,
+		},
+		Trees: []string{enginePaths.BubbleSnapshotDir, enginePaths.BubbleSocketDir},
+	}
+	if err := privilege.Drop(enginePaths.BubbleSourceDir, owned); err != nil {
+		return err
+	}
+
 	secret, err := auth.LoadSecret(cfg.JWTSecretFile)
 	if err != nil {
 		return err

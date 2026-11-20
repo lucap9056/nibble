@@ -76,7 +76,7 @@ RUN if [ "${WEB}" = "none" ]; then GO_TAGS=noweb; fi \
  && CGO_ENABLED=0 go build -tags "${GO_TAGS}" -trimpath -ldflags="-s -w" -o /out/nibbled ./cmd/nibbled \
  && mkdir -p /out/data /out/run /out/bubbles
 
-FROM gcr.io/distroless/cc-debian12:nonroot AS app
+FROM gcr.io/distroless/cc-debian12 AS app
 WORKDIR /var/lib/nibble
 
 ENV ADMIN_LISTEN=0.0.0.0:8081 \
